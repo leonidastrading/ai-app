@@ -27,6 +27,13 @@ jobs:
           export UAI_VERSION="${UAI_VERSION#v}"
           ./scripts/build-app.sh
 
+      - name: Smoke test (launches and stays running)
+        run: |
+          open build/UAI.app
+          sleep 15
+          pgrep -x UAI || { echo "UAI is not running after launch"; ls ~/Library/Logs/DiagnosticReports | grep -i uai || true; exit 1; }
+          pkill -x UAI || true
+
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
