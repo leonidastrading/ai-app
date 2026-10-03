@@ -6,7 +6,9 @@ struct UniversalView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var universal: UniversalStore
     @EnvironmentObject private var webViews: WebViewStore
+    @EnvironmentObject private var memory: MemoryStore
     @AppStorage(SettingsKey.autoSend) private var autoSend = true
+    @AppStorage(SettingsKey.shareMemory) private var shareMemory = true
 
     @State private var draft = ""
     @State private var override: ProviderID?
@@ -104,6 +106,12 @@ struct UniversalView: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Toggle(isOn: $shareMemory) {
+                    Label("Include memory", systemImage: "brain.head.profile")
+                }
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .help("Add what UAI remembers about you, plus related chats from your other AIs")
                 Toggle("Send automatically", isOn: $autoSend)
                     .toggleStyle(.checkbox)
                     .font(.caption)
@@ -153,12 +161,13 @@ struct UniversalView: View {
             app.go(.provider(decision.provider))
 
             let name = Provider.get(decision.provider).name
-            switch await webViews.deliver(prompt, to: decision.provider, autoSend: autoSend) {
+            let message = memory.prompt(prompt, for: decision.provider)
+            switch await webViews.deliver(message, to: decision.provider, autoSend: autoSend) {
             case .sent: app.show(toast: "Sent to \(name) · \(decision.reason)")
             case .inserted: app.show(toast: "Prompt is ready in \(name). Press Return to send.")
             case .failed:
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(prompt, forType: .string)
+                NSPasteboard.general.setString(message, forType: .string)
                 app.show(toast: "Couldn't find \(name)'s message box (signed in?). Prompt copied; paste with ⌘V.")
             }
         }

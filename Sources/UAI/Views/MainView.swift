@@ -3,6 +3,7 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
+    @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -14,6 +15,12 @@ struct MainView: View {
                         SearchResultsView()
                             .padding(.top, 8)
                             .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .overlay(alignment: .top) {
+                    if let link = app.pendingLink, app.searchText.isEmpty {
+                        LinkBanner(provider: Provider.get(link.provider), url: link.url)
+                            .padding(.top, 10)
                     }
                 }
                 .overlay(alignment: .bottom) {
@@ -35,6 +42,22 @@ struct MainView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbarColorScheme(.dark, for: .windowToolbar)
         .tint(Theme.pink)
+        .sheet(isPresented: $app.showAddAI) { AddAISheet() }
+        .onAppear(perform: connectNotifications)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            app.markRead()
+            app.checkPasteboardForLink()
+        }
+    }
+
+    /// Wires "AI finished replying" events to unread badges and notifications.
+    private func connectNotifications() {
+        let state = app
+        webViews.onReply = { [weak state] id, title, preview in
+            guard let state, state.replyArrived(from: id) else { return }
+            Notifier.shared.replied(Provider.get(id), title: title, preview: preview)
+        }
+        Notifier.shared.onOpen = { [weak state] id in state?.go(.provider(id)) }
     }
 
     @ViewBuilder
@@ -42,7 +65,7 @@ struct MainView: View {
         ZStack {
             // Every AI that has been opened stays alive in the background so
             // switching is instant and in-progress answers keep streaming.
-            ForEach(Provider.all) { provider in
+            ForEach(registry.all) { provider in
                 if webViews.loaded.contains(provider.id) || app.destination == .provider(provider.id) {
                     WebPane(provider: provider, isActive: app.destination == .provider(provider.id))
                         .zIndex(app.destination == .provider(provider.id) ? 1 : 0)
@@ -53,6 +76,9 @@ struct MainView: View {
             }
             if app.destination == .media {
                 MediaView().zIndex(2)
+            }
+            if app.destination == .memory {
+                MemoryView().zIndex(2)
             }
         }
     }
@@ -76,7 +102,12 @@ struct TopBar: ToolbarContent {
         ToolbarItem(placement: .principal) {
             GlobalSearchField()
         }
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { app.toggleMemory() } label: {
+                Label("Memory", systemImage: "brain.head.profile")
+                    .labelStyle(.titleAndIcon)
+            }
+            .help("Shared memory for all your AIs (⇧⌘Y)")
             Button { app.toggleMedia() } label: {
                 Label("Media", systemImage: app.destination == .media ? "photo.on.rectangle.angled.fill" : "photo.on.rectangle.angled")
                     .labelStyle(.titleAndIcon)
@@ -110,5 +141,33 @@ struct GlobalSearchField: View {
         .background(Theme.searchField, in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(focused ? 0.5 : 0.15)))
         .onChange(of: app.focusSearchTick) { focused = true }
+    }
+}
+
+/// "Open this copied link in Claude?" Shown when you copy a link that belongs
+/// to one of your AIs, such as a sign-in link from an email.
+private struct LinkBanner: View {
+    @EnvironmentObject private var app: AppState
+    @EnvironmentObject private var webViews: WebViewStore
+    let provider: Provider
+    let url: URL
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProviderIcon(provider: provider, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Open the link you copied in \(provider.name)?").font(.callout.bold())
+                Text(url.absoluteString).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .frame(maxWidth: 360, alignment: .leading)
+            Button("Open in UAI") { app.open(url, in: provider.id, webViews: webViews) }
+                .buttonStyle(.borderedProminent)
+            Button { app.pendingLink = nil } label: { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
     }
 }

@@ -13,10 +13,12 @@ struct SettingsView: View {
 }
 
 private struct ServicesSettings: View {
+    @ObservedObject private var registry = ProviderRegistry.shared
+
     var body: some View {
         Form {
             Section {
-                ForEach(Provider.all) { ProviderSettingsRow(provider: $0) }
+                ForEach(registry.all) { ProviderSettingsRow(provider: $0) }
             } footer: {
                 Text("Each AI runs its own website inside UAI, signed in with your account, so chats stay in sync with its other apps. Change the address if a service moves.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -44,6 +46,13 @@ private struct ProviderSettingsRow: View {
             Text(provider.name).frame(width: 80, alignment: .leading)
             TextField("", text: $url, prompt: Text(provider.defaultHomeURL.absoluteString))
                 .textFieldStyle(.roundedBorder)
+            if provider.isCustom {
+                Button(role: .destructive) { ProviderRegistry.shared.remove(provider.id) } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove \(provider.name)")
+            }
         }
     }
 }
@@ -51,6 +60,8 @@ private struct ProviderSettingsRow: View {
 private struct UniversalSettings: View {
     @AppStorage(SettingsKey.autoSend) private var autoSend = true
     @AppStorage(SettingsKey.smartRouting) private var smartRouting = true
+    @AppStorage(SettingsKey.shareMemory) private var shareMemory = true
+    @AppStorage(SettingsKey.notifications) private var notify = true
     @State private var apiKey = Keychain.read(Keychain.anthropicKey) ?? ""
     @State private var saved = false
 
@@ -58,6 +69,16 @@ private struct UniversalSettings: View {
         Form {
             Section("Sending") {
                 Toggle("Press send automatically after routing", isOn: $autoSend)
+                Toggle("Include shared memory in prompts", isOn: $shareMemory)
+            }
+            Section {
+                Toggle("Notify me when an AI replies", isOn: $notify)
+                Button("Notification Settings…") { Notifier.shared.openSystemSettings() }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("You get a notification when an answer finishes while UAI is in the background or you're looking at a different AI. Unread replies also show as badges on the AI icons and the Dock.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Let Claude choose the best AI", isOn: $smartRouting)
@@ -74,7 +95,7 @@ private struct UniversalSettings: View {
             } header: {
                 Text("Smart routing")
             } footer: {
-                Text("Optional. Without a key, UAI routes using built-in rules (images → ChatGPT, video → Gemini, news → Grok, code → Claude, math → DeepSeek…). With a key, Claude reads each prompt and picks; this costs a fraction of a cent per prompt on your Anthropic API account.")
+                Text("Optional. Without a key, UAI routes using built-in rules (images → ChatGPT, video → Gemini, news → xAI, X posts → Grok, code → Claude, math → DeepSeek…). With a key, Claude reads each prompt and picks, including AIs you added, and Memory can learn from your chats. Each routing costs a fraction of a cent on your Anthropic API account.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -84,6 +105,7 @@ private struct UniversalSettings: View {
 
 private struct DataSettings: View {
     @EnvironmentObject private var universal: UniversalStore
+    @EnvironmentObject private var memory: MemoryStore
     @State private var confirmSignOut = false
 
     var body: some View {
@@ -94,6 +116,7 @@ private struct DataSettings: View {
             }
             Section("History") {
                 Button("Clear Universal AI history") { universal.clear() }
+                Button("Clear memory notes", role: .destructive) { memory.clear() }
             }
             Section("Accounts") {
                 Button("Sign out of all AIs…", role: .destructive) { confirmSignOut = true }

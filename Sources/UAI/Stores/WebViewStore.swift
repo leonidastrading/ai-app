@@ -16,6 +16,11 @@ final class WebViewStore: NSObject, ObservableObject {
     /// Bumped whenever a web view's back/forward/loading state changes.
     @Published private(set) var navigationTick = 0
     @Published var lastDownload: URL?
+    /// AIs whose page is currently a sign-in screen.
+    @Published private(set) var needsSignIn: Set<ProviderID> = []
+
+    /// Called when an AI finishes writing a reply: (provider, page title, preview).
+    var onReply: ((ProviderID, String, String) -> Void)?
 
     let index: ConversationIndex
     let media: MediaLibrary
@@ -44,6 +49,9 @@ final class WebViewStore: NSObject, ObservableObject {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.replyWatcherScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = Self.userAgent
@@ -58,6 +66,10 @@ final class WebViewStore: NSObject, ObservableObject {
             })
         }
 
+        observers.append(webView.observe(\.url, options: [.new]) { [weak self] web, _ in
+            Task { @MainActor in self?.updateSignInState(for: web) }
+        })
+
         webViews[id] = webView
         // Often called while SwiftUI is building views; publish on the next turn.
         DispatchQueue.main.async { self.loaded.insert(id) }
@@ -70,6 +82,14 @@ final class WebViewStore: NSObject, ObservableObject {
     func provider(of webView: WKWebView?) -> ProviderID? {
         guard let webView else { return nil }
         return webViews.first { $0.value === webView }?.key
+    }
+
+    /// Forgets a removed AI's web view.
+    func close(_ id: ProviderID) {
+        webViews[id]?.removeFromSuperview()
+        webViews[id] = nil
+        loaded.remove(id)
+        needsSignIn.remove(id)
     }
 
     func goHome(_ id: ProviderID) {
@@ -91,18 +111,19 @@ final class WebViewStore: NSObject, ObservableObject {
     /// Starts a new chat in the provider and types `prompt` into its message box,
     /// pressing send when `autoSend` is on. Works by scripting the provider's
     /// own page, so the chat is created under your account and syncs everywhere.
-    func deliver(_ prompt: String, to id: ProviderID, autoSend: Bool) async -> DeliveryResult {
+    func deliver(_ prompt: String, to id: ProviderID, autoSend: Bool, newChat: Bool = true) async -> DeliveryResult {
         let webView = webView(for: id)
-        webView.load(URLRequest(url: Provider.get(id).homeURL))
-
-        // Wait for the new-chat page to load before looking for the composer.
-        try? await Task.sleep(for: .milliseconds(600))
+        if newChat {
+            webView.load(URLRequest(url: Provider.get(id).homeURL))
+            // Wait for the new-chat page to load before looking for the composer.
+            try? await Task.sleep(for: .milliseconds(600))
+        }
         for _ in 0..<40 where webView.isLoading {
             try? await Task.sleep(for: .milliseconds(250))
         }
 
-        let script = Self.deliverScript(prompt: prompt, autoSend: autoSend)
-        for _ in 0..<30 {
+        let script = Self.deliverScript(prompt: prompt, autoSend: autoSend, replace: newChat)
+        for _ in 0..<(newChat ? 30 : 4) {
             let result = await evaluate(script, in: webView)
             switch result {
             case "sent": return .sent
@@ -113,12 +134,13 @@ final class WebViewStore: NSObject, ObservableObject {
         return .failed
     }
 
-    private static func deliverScript(prompt: String, autoSend: Bool) -> String {
+    private static func deliverScript(prompt: String, autoSend: Bool, replace: Bool) -> String {
         let literal = (try? String(data: JSONEncoder().encode(prompt), encoding: .utf8)) ?? "\"\""
         return """
         (() => {
           const text = \(literal);
           const autoSend = \(autoSend ? "true" : "false");
+          const replace = \(replace ? "true" : "false");
           const visible = el => {
             const r = el.getBoundingClientRect();
             return r.width > 80 && r.height > 12 && el.offsetParent !== null && !el.disabled && !el.readOnly;
@@ -131,10 +153,17 @@ final class WebViewStore: NSObject, ObservableObject {
           box.focus();
           if (box.tagName === 'TEXTAREA') {
             const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-            setter.call(box, text);
+            setter.call(box, replace || !box.value ? text : text + '\\n\\n' + box.value);
             box.dispatchEvent(new Event('input', { bubbles: true }));
           } else {
-            document.execCommand('selectAll', false, null);
+            if (replace) {
+              document.execCommand('selectAll', false, null);
+            } else {
+              const sel = window.getSelection();
+              sel.selectAllChildren(box);
+              sel.collapseToStart();
+              if (box.innerText.trim()) { document.execCommand('insertText', false, '\\n\\n'); sel.collapseToStart(); }
+            }
             document.execCommand('insertText', false, text);
             box.dispatchEvent(new InputEvent('input', { bubbles: true }));
           }
@@ -171,23 +200,25 @@ final class WebViewStore: NSObject, ObservableObject {
         let script = """
         (() => {
           const hints = \(hintsJSON);
-          const match = path => hints.some(h => path.includes(h) && path.length > path.indexOf(h) + h.length);
+          const hit = (s, h) => s.includes(h) && s.length > s.indexOf(h) + h.length;
+          const match = u => hints.some(h => hit(u.pathname, h) || hit(u.search, h));
+          const keyOf = u => u.origin + u.pathname + (hints.some(h => hit(u.search, h)) ? u.search : '');
           const links = [];
           const seen = new Set();
           for (const a of document.querySelectorAll('a[href]')) {
             let u; try { u = new URL(a.href, location.href); } catch (e) { continue; }
-            if (u.host !== location.host || !match(u.pathname)) continue;
-            const key = u.origin + u.pathname;
+            if (u.host !== location.host || !match(u)) continue;
+            const key = keyOf(u);
             const title = (a.innerText || a.getAttribute('aria-label') || a.title || '').trim().replace(/\\s+/g, ' ');
             if (!title || title.length > 300 || seen.has(key)) continue;
             seen.add(key);
             links.push({ url: key, title });
           }
           let current = null;
-          if (match(location.pathname)) {
+          if (match(location)) {
             const main = document.querySelector('main') || document.body;
             current = {
-              url: location.origin + location.pathname,
+              url: keyOf(location),
               title: document.title,
               body: (main.innerText || '').slice(0, 40000)
             };
@@ -233,6 +264,89 @@ final class WebViewStore: NSObject, ObservableObject {
     }
 }
 
+// MARK: - Sign-in detection and reply notifications
+
+extension WebViewStore {
+    private static let signInHosts = [
+        "accounts.google.com", "appleid.apple.com", "login.microsoftonline.com", "login.live.com",
+        "auth.openai.com", "auth0.openai.com", "accounts.x.ai", "auth.meta.com", "github.com/login",
+    ]
+
+    /// True for sign-in and sign-up pages, including "Continue with Google/Apple" flows.
+    static func isSignInURL(_ url: URL?) -> Bool {
+        guard let url, let host = url.host?.lowercased() else { return false }
+        let full = host + url.path.lowercased()
+        if signInHosts.contains(where: { full.hasPrefix($0) || host.hasSuffix("." + $0) }) { return true }
+        if host.hasSuffix("x.com") || host.hasSuffix("twitter.com"), url.path.contains("/i/flow/login") { return true }
+        let path = url.path.lowercased()
+        return ["/login", "/log-in", "/signin", "/sign-in", "/signup", "/sign-up", "/auth", "/oauth"]
+            .contains { path.hasPrefix($0) || path.contains($0 + "/") }
+    }
+
+    func updateSignInState(for webView: WKWebView) {
+        guard let id = provider(of: webView) else { return }
+        if Self.isSignInURL(webView.url) {
+            needsSignIn.insert(id)
+        } else {
+            needsSignIn.remove(id)
+        }
+    }
+
+    /// Watches for the "Stop" button that every AI shows while it writes.
+    /// When it goes away after a few seconds, the reply is done.
+    static let replyWatcherScript = """
+    (() => {
+      if (window.__uaiReplyWatch) return;
+      window.__uaiReplyWatch = true;
+      const stopSelector = [
+        'button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]',
+        '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]'
+      ].join(',');
+      const replySelector = [
+        '[data-message-author-role="assistant"]', '.font-claude-response', '.font-claude-message',
+        'model-response', '.ds-markdown', '[data-testid="assistant-message"]', '.message-bubble'
+      ].join(',');
+      let busy = false, since = 0;
+      setInterval(() => {
+        const stop = [...document.querySelectorAll(stopSelector)].find(b => {
+          const label = (b.getAttribute('aria-label') || b.title || '').toLowerCase();
+          return b.offsetParent !== null && !label.includes('record') && !label.includes('dictat');
+        });
+        const now = Date.now();
+        if (stop && !busy) { busy = true; since = now; return; }
+        if (!stop && busy) {
+          busy = false;
+          if (now - since < 2000) return;
+          const replies = document.querySelectorAll(replySelector);
+          const last = replies.length ? replies[replies.length - 1].innerText : '';
+          window.webkit.messageHandlers.uai.postMessage({
+            type: 'replyDone', title: document.title,
+            preview: (last || '').replace(/\\s+/g, ' ').trim().slice(0, 220)
+          });
+        }
+      }, 800);
+    })();
+    """
+}
+
+extension WebViewStore: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], body["type"] as? String == "replyDone",
+              let id = provider(of: message.webView) else { return }
+        onReply?(id, body["title"] as? String ?? "", body["preview"] as? String ?? "")
+    }
+}
+
+/// WKUserContentController retains its message handlers; this proxy keeps
+/// that from retaining the store.
+private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
+    weak var target: WKScriptMessageHandler?
+    init(target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(controller, didReceive: message)
+    }
+}
+
 // MARK: - Navigation, downloads
 
 extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
@@ -271,6 +385,7 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        updateSignInState(for: webView)
         if let id = provider(of: webView) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak webView] in
                 guard let self, let webView else { return }
@@ -304,7 +419,8 @@ extension WebViewStore: WKUIDelegate {
         // default browser. Script-opened windows are usually sign-in popups
         // ("Continue with Google/Apple") and must stay inside the app so the
         // login completes in the same session.
-        if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url {
+        if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url,
+           !Self.isSignInURL(url) {
             NSWorkspace.shared.open(url)
             return nil
         }
@@ -318,7 +434,7 @@ extension WebViewStore: WKUIDelegate {
         let height = windowFeatures.height?.doubleValue ?? 680
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Sign in"
+        window.title = "Sign in · " + (navigationAction.request.url?.host ?? "")
         window.isReleasedWhenClosed = false
         window.contentView = popup
         window.center()

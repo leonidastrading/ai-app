@@ -9,6 +9,8 @@ struct UAIApp: App {
     @StateObject private var media: MediaLibrary
     @StateObject private var universal: UniversalStore
     @StateObject private var webViews: WebViewStore
+    @StateObject private var memory: MemoryStore
+    @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
         let index = ConversationIndex()
@@ -18,6 +20,7 @@ struct UAIApp: App {
         _media = StateObject(wrappedValue: media)
         _universal = StateObject(wrappedValue: UniversalStore())
         _webViews = StateObject(wrappedValue: WebViewStore(index: index, media: media))
+        _memory = StateObject(wrappedValue: MemoryStore(index: index))
     }
 
     var body: some Scene {
@@ -28,7 +31,8 @@ struct UAIApp: App {
                 .environmentObject(media)
                 .environmentObject(universal)
                 .environmentObject(webViews)
-                .frame(minWidth: 960, minHeight: 600)
+                .environmentObject(memory)
+                .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -44,13 +48,19 @@ struct UAIApp: App {
                     .keyboardShortcut("k", modifiers: .command)
                 Button("Media") { app.toggleMedia() }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
+                Button("Memory") { app.toggleMemory() }
+                    .keyboardShortcut("y", modifiers: [.command, .shift])
+                Button("Open Copied Link in UAI") { app.openCopiedLink(webViews: webViews) }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
                 Divider()
                 Button("Universal AI") { app.go(.universal) }
                     .keyboardShortcut("1", modifiers: .command)
-                ForEach(Array(Provider.all.enumerated()), id: \.element.id) { offset, provider in
+                ForEach(Array(registry.all.prefix(8).enumerated()), id: \.element.id) { offset, provider in
                     Button(provider.name) { app.go(.provider(provider.id)) }
                         .keyboardShortcut(KeyEquivalent(Character(String(offset + 2))), modifiers: .command)
                 }
+                Divider()
+                Button("Add AI…") { app.showAddAI = true }
             }
         }
 
@@ -58,6 +68,7 @@ struct UAIApp: App {
             SettingsView()
                 .environmentObject(universal)
                 .environmentObject(webViews)
+                .environmentObject(memory)
         }
     }
 }
@@ -67,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Launched from a bare executable (swift run) we'd otherwise be a background app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Asks once for permission to notify you when an AI replies.
+        Notifier.shared.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
