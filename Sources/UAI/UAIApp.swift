@@ -66,6 +66,7 @@ struct UAIApp: App {
 
         Settings {
             SettingsView()
+                .preferredColorScheme(.dark)
                 .environmentObject(universal)
                 .environmentObject(webViews)
                 .environmentObject(memory)
@@ -77,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Launched from a bare executable (swift run) we'd otherwise be a background app.
         NSApp.setActivationPolicy(.regular)
+        // Dark everywhere, including the AIs' own pages (they follow the app's appearance).
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         NSApp.activate(ignoringOtherApps: true)
         // Asks once for permission to notify you when an AI replies.
         Notifier.shared.start()

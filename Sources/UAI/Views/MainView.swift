@@ -42,6 +42,7 @@ struct MainView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbarColorScheme(.dark, for: .windowToolbar)
         .tint(Theme.pink)
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $app.showAddAI) { AddAISheet() }
         .onAppear(perform: connectNotifications)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

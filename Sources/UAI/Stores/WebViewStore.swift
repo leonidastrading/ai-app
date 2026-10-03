@@ -51,12 +51,16 @@ final class WebViewStore: NSObject, ObservableObject {
         config.preferences.isElementFullscreenEnabled = true
         config.userContentController.addUserScript(WKUserScript(
             source: Self.replyWatcherScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // Consent banners often live in iframes, so this one runs in every frame.
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.acceptCookiesScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
+        webView.underPageBackgroundColor = NSColor(red: 0.09, green: 0.08, blue: 0.17, alpha: 1)
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
@@ -292,6 +296,51 @@ extension WebViewStore {
         }
     }
 
+    /// Clicks "Accept all" on cookie banners so they never get in the way.
+    /// Generic labels like "OK" or "Got it" are only clicked inside an
+    /// element that is clearly a cookie/consent banner.
+    static let acceptCookiesScript = """
+    (() => {
+      if (window.__uaiCookies) return;
+      window.__uaiCookies = true;
+      const known = [
+        '#onetrust-accept-btn-handler', '#accept-recommended-btn-handler',
+        '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll', '#CybotCookiebotDialogBodyButtonAccept',
+        '#didomi-notice-agree-button', '.fc-cta-consent', '#truste-consent-button',
+        '[data-testid="cookie-policy-banner-accept"]', '[data-testid="accept-all-cookies"]',
+        '[data-cookiebanner="accept_button"]', 'button[aria-label="Accept all"]'
+      ];
+      const strong = ['accept all', 'accept all cookies', 'allow all', 'allow all cookies', 'accept cookies',
+                      'allow cookies', 'agree to all', 'accept and continue', 'alle akzeptieren',
+                      'tout accepter', 'aceptar todo', 'accetta tutto', 'aceitar tudo'];
+      const weak = ['accept', 'i accept', 'agree', 'i agree', 'ok', 'okay', 'got it', 'allow', 'continue'];
+      const inBanner = el => {
+        for (let n = el, i = 0; n && i < 10; n = n.parentElement, i++) {
+          const cls = typeof n.className === 'string' ? n.className : '';
+          const text = ((n.id || '') + ' ' + cls + ' ' + (n.getAttribute && n.getAttribute('aria-label') || '')).toLowerCase();
+          if (/cookie|consent|gdpr|cmp|privacy-banner|onetrust|didomi|truste/.test(text)) return true;
+        }
+        return false;
+      };
+      const visible = el => el.offsetParent !== null || el.getClientRects().length > 0;
+      const run = () => {
+        for (const sel of known) {
+          const b = document.querySelector(sel);
+          if (b && visible(b)) { b.click(); return true; }
+        }
+        const candidates = document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], a');
+        for (const b of candidates) {
+          const label = (b.innerText || b.value || b.getAttribute('aria-label') || '').trim().toLowerCase();
+          if (!label || label.length > 40 || !visible(b)) continue;
+          if (strong.includes(label) || (weak.includes(label) && inBanner(b))) { b.click(); return true; }
+        }
+        return false;
+      };
+      let tries = 0;
+      const timer = setInterval(() => { if (run() || ++tries > 25) clearInterval(timer); }, 1000);
+    })();
+    """
+
     /// Watches for the "Stop" button that every AI shows while it writes.
     /// When it goes away after a few seconds, the reply is done.
     static let replyWatcherScript = """
@@ -415,12 +464,10 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
 extension WebViewStore: WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Plain links that open a new tab (citations, shared links) go to the
-        // default browser. Script-opened windows are usually sign-in popups
-        // ("Continue with Google/Apple") and must stay inside the app so the
-        // login completes in the same session.
-        if navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url,
-           !Self.isSignInURL(url) {
+        // Sign-in must happen inside UAI: a login completed in your browser
+        // never reaches UAI. So only ordinary outside links (citations,
+        // sources) go to the default browser, and never while signing in.
+        if let url = navigationAction.request.url, shouldOpenInBrowser(url, from: webView, action: navigationAction) {
             NSWorkspace.shared.open(url)
             return nil
         }
@@ -434,13 +481,36 @@ extension WebViewStore: WKUIDelegate {
         let height = windowFeatures.height?.doubleValue ?? 680
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Sign in · " + (navigationAction.request.url?.host ?? "")
+        window.appearance = NSAppearance(named: .darkAqua)
+        let host = navigationAction.request.url?.host ?? ""
+        window.title = host.isEmpty ? "Sign in" : "Sign in · " + host
         window.isReleasedWhenClosed = false
         window.contentView = popup
         window.center()
         window.makeKeyAndOrderFront(nil)
         popups.append(window)
         return popup
+    }
+
+    /// Hosts that run sign-in for other sites (Google, Apple, Microsoft, X…).
+    private static let identityHosts = [
+        "google.com", "apple.com", "icloud.com", "microsoft.com", "microsoftonline.com", "live.com",
+        "facebook.com", "meta.com", "x.com", "twitter.com", "github.com", "okta.com", "auth0.com",
+        "clerk.com", "clerk.dev", "stytch.com", "workos.com", "openai.com", "anthropic.com", "x.ai",
+    ]
+
+    private func shouldOpenInBrowser(_ url: URL, from webView: WKWebView, action: WKNavigationAction) -> Bool {
+        guard action.navigationType == .linkActivated, url.scheme?.hasPrefix("http") == true,
+              let host = url.host?.lowercased() else { return false }
+        // Popups opened from sign-in windows, or while an AI is on its sign-in page, stay in UAI.
+        guard let id = provider(of: webView), !needsSignIn.contains(id), !Self.isSignInURL(webView.url) else {
+            return false
+        }
+        if Self.isSignInURL(url) { return false }
+        let matches: (String) -> Bool = { host == $0 || host.hasSuffix("." + $0) }
+        if Self.identityHosts.contains(where: matches) { return false }
+        if Provider.get(id).hosts.contains(where: matches) { return false }
+        return true
     }
 
     func webViewDidClose(_ webView: WKWebView) {

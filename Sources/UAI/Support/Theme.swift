@@ -25,5 +25,7 @@ enum Theme {
     static let searchField = Color.white.opacity(0.22)
     static let selectionRing = Color.white
     static let accent = pink
-    static let contentBackground = mesh
+    /// Dark content area, a deep indigo night.
+    static let contentBackground = Color(red: 0.09, green: 0.08, blue: 0.17)   // #17142B
+    static let card = Color.white.opacity(0.06)
 }

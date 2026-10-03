@@ -180,17 +180,26 @@ private struct RailButton<Icon: View>: View {
     }
 }
 
-/// The provider's favicon on a round white badge, or a colored letter badge while it loads.
+/// The provider's logo in a round badge. Logos that come on a solid tile
+/// (Claude's orange, xAI's black) fill the circle with that color; others sit
+/// on white. A colored letter badge shows while the logo loads.
 struct ProviderIcon: View {
+    @ObservedObject private var loader = IconLoader.shared
     let provider: Provider
     var size: CGFloat = 40
 
     var body: some View {
-        AsyncImage(url: provider.iconURL) { phase in
-            if let image = phase.image {
+        Group {
+            if let icon = loader.icon(for: provider.iconURL) {
+                let fill = icon.fill ?? provider.iconFill
                 ZStack {
-                    Color.white
-                    image.resizable().interpolation(.high).scaledToFit().padding(size * 0.2)
+                    fill ?? Color.white
+                    Image(nsImage: icon.image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        // Tiled logos are enlarged so the tile blends into the circle.
+                        .padding(fill == nil ? size * 0.2 : size * 0.04)
                 }
             } else {
                 letterBadge

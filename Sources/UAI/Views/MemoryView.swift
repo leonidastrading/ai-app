@@ -127,7 +127,7 @@ struct MemoryView: View {
                 }
                 .buttonStyle(.borderless)
                 .padding(10)
-                .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }

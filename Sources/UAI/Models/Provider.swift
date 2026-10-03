@@ -34,6 +34,9 @@ struct Provider: Identifiable, Hashable {
     /// emailed sign-in links in the right AI.
     let hosts: [String]
     var isCustom = false
+    /// Circle color for logos that sit on a solid tile, used if it can't be
+    /// read from the logo itself.
+    var iconFill: Color? = nil
 
     static let builtIn: [Provider] = [
         Provider(
@@ -42,7 +45,8 @@ struct Provider: Identifiable, Hashable {
             conversationPathHints: ["/chat/"],
             tint: Color(red: 0.85, green: 0.47, blue: 0.34),
             strengths: "coding, debugging, long documents, careful writing and editing, analysis, reports",
-            hosts: ["claude.ai", "anthropic.com"]
+            hosts: ["claude.ai", "anthropic.com"],
+            iconFill: Color(red: 0.85, green: 0.47, blue: 0.34)
         ),
         Provider(
             id: .chatgpt, name: "ChatGPT", maker: "OpenAI",
@@ -82,7 +86,8 @@ struct Provider: Identifiable, Hashable {
             conversationPathHints: ["/c/", "/chat/"],
             tint: Color(white: 0.15),
             strengths: "xAI's standalone assistant: deep reasoning, real-time web search, image and video generation (Imagine)",
-            hosts: ["grok.com", "x.ai"]
+            hosts: ["grok.com", "x.ai"],
+            iconFill: .black
         ),
         Provider(
             id: .grok, name: "Grok", maker: "X",
@@ -90,7 +95,8 @@ struct Provider: Identifiable, Hashable {
             conversationPathHints: ["conversation="],
             tint: Color(white: 0.05),
             strengths: "the Grok bot inside X: explaining X posts, trends and breaking news on X/Twitter, accounts and threads",
-            hosts: ["x.com", "twitter.com"]
+            hosts: ["x.com", "twitter.com"],
+            iconFill: .black
         ),
     ]
 
