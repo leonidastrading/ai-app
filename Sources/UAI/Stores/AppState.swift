@@ -14,6 +14,11 @@ final class AppState: ObservableObject {
     @Published private(set) var destination: Destination = .universal
     @Published var searchText = ""
     @Published var focusSearchTick = 0
+    /// Which search result is highlighted, and a counter the results view
+    /// watches to open it when you press Return.
+    @Published var searchSelection = 0
+    @Published var searchResultCount = 0
+    @Published var submitSearchTick = 0
     @Published var toast: String?
     /// Replies you haven't looked at yet, per AI. Mirrored on the Dock icon.
     @Published private(set) var unread: [ProviderID: Int] = [:] {
@@ -140,6 +145,18 @@ final class AppState: ObservableObject {
         backStack.append(destination)
         destination = next
         markRead()
+    }
+
+    /// Pressing Return in the search field opens the highlighted result.
+    func submitSearch() {
+        guard searchResultCount > 0 else { return }
+        submitSearchTick &+= 1
+    }
+
+    /// Up/down arrows move the highlight through the results.
+    func moveSearchSelection(_ delta: Int) {
+        guard searchResultCount > 0 else { return }
+        searchSelection = (searchSelection + delta + searchResultCount) % searchResultCount
     }
 
     func show(toast message: String) {

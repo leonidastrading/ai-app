@@ -130,6 +130,10 @@ struct GlobalSearchField: View {
                 .foregroundStyle(.white)
                 .focused($focused)
                 .onExitCommand { app.searchText = ""; focused = false }
+                .onSubmit { app.submitSearch() }
+                .onChange(of: app.searchText) { app.searchSelection = 0 }
+                .onKeyPress(.downArrow) { app.moveSearchSelection(1); return .handled }
+                .onKeyPress(.upArrow) { app.moveSearchSelection(-1); return .handled }
             if !app.searchText.isEmpty {
                 Button { app.searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.7))
