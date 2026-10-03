@@ -1,17 +1,29 @@
 import SwiftUI
 
-/// Slack-inspired palette.
+/// Colorway taken from the shoe: hot pink upper, indigo-violet midsole,
+/// aqua outsole and light gray knit.
 enum Theme {
-    static let rail = Color(red: 0.15, green: 0.04, blue: 0.16)          // deep aubergine
-    static let toolbar = Color(red: 0.25, green: 0.08, blue: 0.26)       // Slack top bar
-    static let sidebar = Color(red: 0.25, green: 0.08, blue: 0.26)
-    static let searchField = Color.white.opacity(0.14)
+    static let pink = Color(red: 0.95, green: 0.40, blue: 0.62)        // #F2669E
+    static let indigo = Color(red: 0.27, green: 0.29, blue: 0.78)      // #4549C7
+    static let violet = Color(red: 0.47, green: 0.38, blue: 0.86)      // #7861DB
+    static let aqua = Color(red: 0.45, green: 0.74, blue: 0.80)        // #73BDCC
+    static let mesh = Color(red: 0.94, green: 0.94, blue: 0.95)        // #F0F0F2
+    static let space = Color(red: 0.08, green: 0.07, blue: 0.20)
+
+    /// Left rail: the midsole fade, indigo into violet into pink, landing on aqua.
+    static let rail = LinearGradient(
+        stops: [.init(color: indigo, location: 0),
+                .init(color: violet, location: 0.35),
+                .init(color: pink.opacity(0.95), location: 0.70),
+                .init(color: aqua, location: 1)],
+        startPoint: .top, endPoint: .bottom)
+
+    /// Top bar: the diagonal stripe band, indigo to pink.
+    static let toolbar = LinearGradient(colors: [indigo, violet, pink],
+                                        startPoint: .leading, endPoint: .trailing)
+
+    static let searchField = Color.white.opacity(0.22)
     static let selectionRing = Color.white
-    static let accent = Color(red: 0.07, green: 0.39, blue: 0.64)        // Slack blue
-    static let universalGradient = LinearGradient(
-        colors: [Color(red: 0.88, green: 0.12, blue: 0.35),
-                 Color(red: 0.93, green: 0.70, blue: 0.18),
-                 Color(red: 0.18, green: 0.71, blue: 0.49),
-                 Color(red: 0.21, green: 0.77, blue: 0.94)],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let accent = pink
+    static let contentBackground = mesh
 }

@@ -28,15 +28,13 @@ struct UniversalView: View {
             history
             composer
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Theme.contentBackground)
         .onAppear { composerFocused = true }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 6).fill(Theme.universalGradient)
-                .overlay(Image(systemName: "sparkles").font(.system(size: 11, weight: .bold)).foregroundStyle(.white))
-                .frame(width: 22, height: 22)
+            GalaxyIcon(size: 26)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Universal AI").font(.headline)
                 Text("Ask anything. UAI picks the best AI and starts the chat there.")
@@ -122,7 +120,7 @@ struct UniversalView: View {
                     Image(systemName: sending ? "hourglass" : "paperplane.fill")
                         .foregroundStyle(.white)
                         .frame(width: 30, height: 28)
-                        .background(draft.isEmpty ? Color.gray.opacity(0.4) : Color(red: 0.0, green: 0.48, blue: 0.35),
+                        .background(draft.isEmpty ? Color.gray.opacity(0.4) : Theme.pink,
                                     in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)

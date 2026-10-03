@@ -26,7 +26,7 @@ struct MediaView: View {
                 }
             }
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Theme.contentBackground)
         .onAppear { media.reload() }
     }
 

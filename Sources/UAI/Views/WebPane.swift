@@ -14,7 +14,7 @@ struct WebPane: View {
             Divider()
             WebViewHost(webView: webViews.webView(for: provider.id), isHidden: !isActive)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.contentBackground)
         .opacity(isActive ? 1 : 0)
         .allowsHitTesting(isActive)
     }

@@ -38,7 +38,7 @@ struct SearchResultsView: View {
                     if !prompts.isEmpty {
                         section("Universal AI") {
                             ForEach(prompts) { entry in
-                                row(icon: AnyView(Image(systemName: "sparkles").frame(width: 20)),
+                                row(icon: AnyView(GalaxyIcon(size: 20)),
                                     title: entry.prompt,
                                     subtitle: "Sent to \(Provider.get(entry.provider).name) · \(entry.date.formatted(date: .abbreviated, time: .shortened))") {
                                     app.searchText = ""

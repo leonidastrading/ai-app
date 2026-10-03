@@ -4,37 +4,40 @@ import SwiftUI
 struct ModelRail: View {
     @EnvironmentObject private var app: AppState
 
+    static let iconSize: CGFloat = 48  // 20% larger than the original 40pt tiles
+
     var body: some View {
-        VStack(spacing: 10) {
-            RailButton(name: "Universal AI — routes to the best AI (⌘1)",
-                       isSelected: app.destination == .universal) {
-                app.go(.universal)
-            } icon: {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Theme.universalGradient)
-                    .overlay(Image(systemName: "sparkles").font(.system(size: 18, weight: .bold)).foregroundStyle(.white))
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 10) {
+                    RailButton(name: "Universal", help: "Universal AI: routes to the best AI (⌘1)",
+                               isSelected: app.destination == .universal) {
+                        app.go(.universal)
+                    } icon: {
+                        GalaxyIcon(size: Self.iconSize)
+                    }
+
+                    Rectangle().fill(.white.opacity(0.3)).frame(width: 36, height: 1)
+
+                    ForEach(Array(Provider.all.enumerated()), id: \.element.id) { offset, provider in
+                        RailProviderSlot(provider: provider, shortcut: offset + 2)
+                    }
+                }
+                .padding(.top, 12)
+                .padding(.bottom, 8)
             }
-
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 28, height: 1)
-
-            ForEach(Array(Provider.all.enumerated()), id: \.element.id) { offset, provider in
-                RailProviderSlot(provider: provider, shortcut: offset + 2)
-            }
-
-            Spacer()
 
             SettingsLink {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.white.opacity(0.75))
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.white.opacity(0.9))
                     .frame(width: 40, height: 40)
             }
             .buttonStyle(.plain)
             .help("Settings (⌘,)")
             .padding(.bottom, 12)
         }
-        .padding(.top, 12)
-        .frame(width: 70)
+        .frame(width: 84)
         .frame(maxHeight: .infinity)
         .background(Theme.rail)
     }
@@ -54,11 +57,11 @@ private struct RailProviderSlot: View {
 
     var body: some View {
         if enabled {
-            RailButton(name: "\(provider.name) by \(provider.maker) (⌘\(shortcut))",
+            RailButton(name: provider.name, help: "\(provider.name) by \(provider.maker) (⌘\(shortcut))",
                        isSelected: app.destination == .provider(provider.id)) {
                 app.go(.provider(provider.id))
             } icon: {
-                ProviderIcon(provider: provider, size: 40)
+                ProviderIcon(provider: provider, size: ModelRail.iconSize)
             }
         }
     }
@@ -66,6 +69,7 @@ private struct RailProviderSlot: View {
 
 private struct RailButton<Icon: View>: View {
     let name: String
+    let help: String
     let isSelected: Bool
     let action: () -> Void
     @ViewBuilder let icon: () -> Icon
@@ -73,22 +77,32 @@ private struct RailButton<Icon: View>: View {
 
     var body: some View {
         Button(action: action) {
-            icon()
-                .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(3)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Theme.selectionRing.opacity(isSelected ? 1 : (hovering ? 0.35 : 0)), lineWidth: 2)
-                )
+            VStack(spacing: 4) {
+                icon()
+                    .frame(width: ModelRail.iconSize, height: ModelRail.iconSize)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                    .padding(3)
+                    .overlay(
+                        Circle().stroke(Theme.selectionRing.opacity(isSelected ? 1 : (hovering ? 0.45 : 0)),
+                                        lineWidth: 2.5)
+                    )
+                Text(name)
+                    .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.85))
+                    .lineLimit(1)
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            }
+            .frame(width: 76)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(name)
+        .help(help)
     }
 }
 
-/// The provider's favicon on a white tile, or a colored letter tile while it loads.
+/// The provider's favicon on a round white badge, or a colored letter badge while it loads.
 struct ProviderIcon: View {
     let provider: Provider
     var size: CGFloat = 40
@@ -98,17 +112,17 @@ struct ProviderIcon: View {
             if let image = phase.image {
                 ZStack {
                     Color.white
-                    image.resizable().interpolation(.high).scaledToFit().padding(size * 0.16)
+                    image.resizable().interpolation(.high).scaledToFit().padding(size * 0.2)
                 }
             } else {
-                letterTile
+                letterBadge
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.25))
+        .clipShape(Circle())
     }
 
-    private var letterTile: some View {
+    private var letterBadge: some View {
         ZStack {
             provider.tint
             Text(String(provider.name.prefix(1)))

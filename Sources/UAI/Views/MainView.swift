@@ -34,6 +34,7 @@ struct MainView: View {
         .toolbarBackground(Theme.toolbar, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbarColorScheme(.dark, for: .windowToolbar)
+        .tint(Theme.pink)
     }
 
     @ViewBuilder

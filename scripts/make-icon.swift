@@ -16,21 +16,28 @@ func render(_ px: Int) -> Data {
     let inset = size * 0.09
     let rect = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
     let tile = NSBezierPath(roundedRect: rect, xRadius: rect.width * 0.225, yRadius: rect.width * 0.225)
-    NSGradient(colors: [NSColor(red: 0.29, green: 0.08, blue: 0.30, alpha: 1),
-                        NSColor(red: 0.13, green: 0.03, blue: 0.14, alpha: 1)])!.draw(in: tile, angle: -90)
 
-    // Four Slack-like colored dots for the four corners of "all AIs".
-    let colors: [NSColor] = [
-        NSColor(red: 0.88, green: 0.12, blue: 0.35, alpha: 1), NSColor(red: 0.93, green: 0.70, blue: 0.18, alpha: 1),
-        NSColor(red: 0.18, green: 0.71, blue: 0.49, alpha: 1), NSColor(red: 0.21, green: 0.77, blue: 0.94, alpha: 1),
-    ]
-    let dot = rect.width * 0.09
-    let positions = [(0.22, 0.78), (0.78, 0.78), (0.22, 0.22), (0.78, 0.22)]
-    for (i, p) in positions.enumerated() {
-        colors[i].setFill()
-        NSBezierPath(ovalIn: NSRect(x: rect.minX + rect.width * p.0 - dot / 2,
-                                    y: rect.minY + rect.height * p.1 - dot / 2, width: dot, height: dot)).fill()
+    // Colorway: indigo -> violet -> pink -> aqua, like the shoe's midsole.
+    let indigo = NSColor(red: 0.27, green: 0.29, blue: 0.78, alpha: 1)
+    let violet = NSColor(red: 0.47, green: 0.38, blue: 0.86, alpha: 1)
+    let pink = NSColor(red: 0.95, green: 0.40, blue: 0.62, alpha: 1)
+    let aqua = NSColor(red: 0.45, green: 0.74, blue: 0.80, alpha: 1)
+    NSGradient(colors: [indigo, violet, pink, aqua])!.draw(in: tile, angle: -60)
+
+    // Diagonal knit stripes across the top half.
+    NSGraphicsContext.saveGraphicsState()
+    tile.addClip()
+    NSColor.white.withAlphaComponent(0.12).setStroke()
+    let stripe = NSBezierPath()
+    stripe.lineWidth = max(1, size * 0.012)
+    var x = rect.minX - rect.height
+    while x < rect.maxX {
+        stripe.move(to: NSPoint(x: x, y: rect.midY))
+        stripe.line(to: NSPoint(x: x + rect.height * 0.5, y: rect.maxY))
+        x += size * 0.035
     }
+    stripe.stroke()
+    NSGraphicsContext.restoreGraphicsState()
 
     let text = NSAttributedString(string: "UAI", attributes: [
         .font: NSFont.systemFont(ofSize: rect.width * 0.30, weight: .heavy),
