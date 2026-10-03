@@ -1,0 +1,113 @@
+import SwiftUI
+import WebKit
+
+struct SettingsView: View {
+    var body: some View {
+        TabView {
+            ServicesSettings().tabItem { Label("AI Services", systemImage: "square.grid.2x2") }
+            UniversalSettings().tabItem { Label("Universal AI", systemImage: "sparkles") }
+            DataSettings().tabItem { Label("Data", systemImage: "externaldrive") }
+        }
+        .frame(width: 620, height: 460)
+    }
+}
+
+private struct ServicesSettings: View {
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Provider.all) { ProviderSettingsRow(provider: $0) }
+            } footer: {
+                Text("Each AI runs its own website inside UAI, signed in with your account, so chats stay in sync with its other apps. Change the address if a service moves.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ProviderSettingsRow: View {
+    let provider: Provider
+    @AppStorage private var enabled: Bool
+    @AppStorage private var url: String
+
+    init(provider: Provider) {
+        self.provider = provider
+        _enabled = AppStorage(wrappedValue: true, SettingsKey.enabled(provider.id))
+        _url = AppStorage(wrappedValue: "", SettingsKey.homeURL(provider.id))
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: $enabled).labelsHidden()
+            ProviderIcon(provider: provider, size: 22)
+            Text(provider.name).frame(width: 80, alignment: .leading)
+            TextField("", text: $url, prompt: Text(provider.defaultHomeURL.absoluteString))
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+}
+
+private struct UniversalSettings: View {
+    @AppStorage(SettingsKey.autoSend) private var autoSend = true
+    @AppStorage(SettingsKey.smartRouting) private var smartRouting = true
+    @State private var apiKey = Keychain.read(Keychain.anthropicKey) ?? ""
+    @State private var saved = false
+
+    var body: some View {
+        Form {
+            Section("Sending") {
+                Toggle("Press send automatically after routing", isOn: $autoSend)
+            }
+            Section {
+                Toggle("Let Claude choose the best AI", isOn: $smartRouting)
+                SecureField("Anthropic API key", text: $apiKey, prompt: Text("sk-ant-…"))
+                HStack {
+                    Button("Save Key") {
+                        Keychain.write(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keychain.anthropicKey)
+                        saved = true
+                    }
+                    if saved { Text("Saved to Keychain").font(.caption).foregroundStyle(.secondary) }
+                    Spacer()
+                    Link("Get a key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                }
+            } header: {
+                Text("Smart routing")
+            } footer: {
+                Text("Optional. Without a key, UAI routes using built-in rules (images → ChatGPT, video → Gemini, news → Grok, code → Claude, math → DeepSeek…). With a key, Claude reads each prompt and picks; this costs a fraction of a cent per prompt on your Anthropic API account.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct DataSettings: View {
+    @EnvironmentObject private var universal: UniversalStore
+    @State private var confirmSignOut = false
+
+    var body: some View {
+        Form {
+            Section("Media") {
+                LabeledContent("Folder", value: Paths.media.path)
+                Button("Show in Finder") { NSWorkspace.shared.open(Paths.media) }
+            }
+            Section("History") {
+                Button("Clear Universal AI history") { universal.clear() }
+            }
+            Section("Accounts") {
+                Button("Sign out of all AIs…", role: .destructive) { confirmSignOut = true }
+                    .confirmationDialog("Sign out of every AI in UAI?", isPresented: $confirmSignOut) {
+                        Button("Sign Out of All", role: .destructive) {
+                            let store = WKWebsiteDataStore.default()
+                            store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                                             modifiedSince: .distantPast) {}
+                        }
+                    } message: {
+                        Text("This clears cookies and site data for every AI inside UAI. Your chats stay in your accounts.")
+                    }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}

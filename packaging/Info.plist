@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>UAI</string>
+    <key>CFBundleDisplayName</key>
+    <string>UAI</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.leonidastrading.uai</string>
+    <key>CFBundleExecutable</key>
+    <string>UAI</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__BUILD__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Lets the AIs inside UAI use your microphone for voice chat when you ask them to.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Lets the AIs inside UAI use your camera when you ask them to.</string>
+</dict>
+</plist>

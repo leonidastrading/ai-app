@@ -1,0 +1,40 @@
+name: Build UAI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build UAI.app
+        env:
+          UAI_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0' }}
+          UAI_BUILD: ${{ github.run_number }}
+        run: |
+          export UAI_VERSION="${UAI_VERSION#v}"
+          ./scripts/build-app.sh
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: UAI-macOS
+          path: build/UAI.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/UAI.zip
