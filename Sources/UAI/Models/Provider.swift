@@ -54,7 +54,7 @@ struct Provider: Identifiable, Hashable {
             defaultHomeURL: URL(string: "https://chatgpt.com/")!,
             conversationPathHints: ["/c/"],
             tint: Color(red: 0.06, green: 0.64, blue: 0.50),
-            strengths: "image generation and editing, general questions, brainstorming, voice",
+            strengths: "general questions, brainstorming, voice chat, image generation as a second choice",
             hosts: ["chatgpt.com", "openai.com"]
         ),
         Provider(
@@ -62,7 +62,7 @@ struct Provider: Identifiable, Hashable {
             defaultHomeURL: URL(string: "https://gemini.google.com/app")!,
             conversationPathHints: ["/app/"],
             tint: Color(red: 0.26, green: 0.52, blue: 0.96),
-            strengths: "video generation, Google Search grounded research, YouTube, Gmail, Docs, Maps",
+            strengths: "image generation and photo editing (Nano Banana, the best image model), video generation (Veo), Google Search grounded research, YouTube, Gmail, Docs, Maps",
             hosts: ["gemini.google.com"]
         ),
         Provider(

@@ -95,7 +95,7 @@ private struct UniversalSettings: View {
             } header: {
                 Text("Smart routing")
             } footer: {
-                Text("Optional. Without a key, UAI routes using built-in rules (images → ChatGPT, video → Gemini, news → xAI, X posts → Grok, code → Claude, math → DeepSeek…). With a key, Claude reads each prompt and picks, including AIs you added, and Memory can learn from your chats. Each routing costs a fraction of a cent on your Anthropic API account.")
+                Text("Optional. Without a key, UAI routes using built-in rules (images and video → Gemini, news → xAI, X posts → Grok, code → Claude, math → DeepSeek…). With a key, Claude reads each prompt and picks, including AIs you added, and Memory can learn from your chats. Each routing costs a fraction of a cent on your Anthropic API account.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

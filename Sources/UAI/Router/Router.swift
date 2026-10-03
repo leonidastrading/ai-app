@@ -33,7 +33,7 @@ enum Router {
     private static let rulesTable: [Rule] = [
         Rule(providers: [.gemini, .xai], reason: "Video generation",
              keywords: ["video", "animate", "animation", "clip", "footage", "veo", "short film", "reel"]),
-        Rule(providers: [.chatgpt, .xai, .gemini], reason: "Image generation",
+        Rule(providers: [.gemini, .chatgpt, .xai], reason: "Image generation (Nano Banana)",
              keywords: ["image", "picture", "photo", "draw", "drawing", "illustrat", "logo", "poster",
                         "wallpaper", "render", "sketch", "painting", "avatar", "icon", "generate a pic"]),
         Rule(providers: [.grok, .xai], reason: "Posts and trends on X",
