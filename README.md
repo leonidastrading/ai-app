@@ -1,6 +1,6 @@
 # UAI: Universal AI for Mac
 
-One Slack-style Mac app for all your AIs: **Claude, ChatGPT, Gemini, DeepSeek, Muse (Meta AI), xAI (grok.com) and Grok (the Grok bot on X)**, plus any AI you add with **+**. On top sits **Universal AI**, which sends each prompt to the AI best suited for it. All of them share one memory, stored on your Mac.
+One Slack-style Mac app for all your AIs: **Claude, ChatGPT, Gemini, DeepSeek, Muse (Meta AI), xAI (grok.com), Grok (the Grok bot on X) and Vercel (v0)**, plus any AI you add with **+**. On top sits **Universal AI**, which sends each prompt to the AI best suited for it. All of them share one memory, stored on your Mac.
 
 ```
 ┌────┬──────────────────────────────────────────────────────────────┐
@@ -20,7 +20,7 @@ One Slack-style Mac app for all your AIs: **Claude, ChatGPT, Gemini, DeepSeek, M
 
 | | |
 |---|---|
-| **Left rail** | Round icons with names, Slack workspace style. The galaxy is Universal AI (⌘1), and ⌘2–⌘9 are the AIs. **+** adds any AI by its web address. Right-click an icon to hide or remove it. |
+| **Left rail** | Round icons with names, Slack workspace style. The galaxy is Universal AI (⌘1), and ⌘2–⌘9 are the AIs. **+** adds any AI by its web address. Drag icons to rearrange them. Right-click an icon to hide or remove it. |
 | **Notifications** | When an AI finishes replying while you're elsewhere, you get a macOS notification. Unread badges also appear on the AI's icon and on the Dock. Click the notification to jump to that AI. |
 | **Shared memory** | Notes about you, plus your chats from every AI, stored only on your Mac. Universal AI adds them to each prompt, and the **Memory** button in any AI drops them into its message box, so every AI knows what you told the others. With an Anthropic API key, **Learn from my chats** fills in the notes for you. |
 | **Your own logins** | Each AI is its official web app running inside UAI. Sign in once with your own account and UAI keeps you signed in. Your chats, history, subscriptions and settings are the same ones you see on the official apps, synced both ways. A key badge marks AIs still waiting for you to sign in. If an AI emails you a sign-in link, copy it and switch back to UAI; it offers to open the link inside UAI. |

@@ -14,6 +14,7 @@ struct ProviderID: RawRepresentable, Hashable, Codable, Identifiable {
     static let muse = ProviderID(rawValue: "muse")
     static let xai = ProviderID(rawValue: "xai")
     static let grok = ProviderID(rawValue: "grok")
+    static let vercel = ProviderID(rawValue: "vercel")
 }
 
 /// One AI service shown in the left rail. Each provider is the service's own
@@ -98,6 +99,15 @@ struct Provider: Identifiable, Hashable {
             hosts: ["x.com", "twitter.com"],
             iconFill: .black
         ),
+        Provider(
+            id: .vercel, name: "Vercel", maker: "Vercel v0",
+            defaultHomeURL: URL(string: "https://v0.app/")!,
+            conversationPathHints: ["/chat/"],
+            tint: .black,
+            strengths: "building websites, web apps and UI from a description: React, Next.js, Tailwind, landing pages, dashboards, prototypes, deploying to Vercel",
+            hosts: ["v0.app", "v0.dev", "vercel.com"],
+            iconFill: .black
+        ),
     ]
 
     /// Built-in AIs followed by the ones you added.
@@ -162,12 +172,43 @@ final class ProviderRegistry: ObservableObject {
     private static let file = "custom-ais.json"
 
     @Published private(set) var custom: [CustomProvider]
+    /// Rail order you set by dragging icons (provider IDs).
+    @Published private(set) var order: [String]
+    private static let orderKey = "rail.order"
 
     private init() {
         custom = JSONFile.load([CustomProvider].self, from: Self.file) ?? []
+        order = UserDefaults.standard.stringArray(forKey: Self.orderKey) ?? []
     }
 
-    var all: [Provider] { Provider.builtIn + custom.map(\.provider) }
+    /// All AIs in rail order. AIs not yet placed (new built-ins, new
+    /// additions) keep their natural position at the end.
+    var all: [Provider] {
+        let natural = Provider.builtIn + custom.map(\.provider)
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return natural.enumerated()
+            .sorted { a, b in
+                let ra = rank[a.element.id.rawValue], rb = rank[b.element.id.rawValue]
+                switch (ra, rb) {
+                case let (x?, y?): return x < y
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return a.offset < b.offset
+                }
+            }
+            .map(\.element)
+    }
+
+    /// Moves `id` to the position of `target` (dragging in the rail).
+    func move(_ id: ProviderID, to target: ProviderID) {
+        guard id != target else { return }
+        var ids = all.map(\.id.rawValue)
+        guard let from = ids.firstIndex(of: id.rawValue), let to = ids.firstIndex(of: target.rawValue) else { return }
+        ids.remove(at: from)
+        ids.insert(id.rawValue, at: to)
+        order = ids
+        UserDefaults.standard.set(ids, forKey: Self.orderKey)
+    }
 
     @discardableResult
     func add(name: String, url: URL, strengths: String) -> ProviderID {

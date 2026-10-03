@@ -4,6 +4,8 @@ import SwiftUI
 struct ModelRail: View {
     @EnvironmentObject private var app: AppState
     @ObservedObject private var registry = ProviderRegistry.shared
+    /// The AI icon being dragged to a new spot.
+    @State private var dragging: ProviderID?
 
     static let iconSize: CGFloat = 48  // 20% larger than the original 40pt tiles
 
@@ -22,6 +24,13 @@ struct ModelRail: View {
 
                     ForEach(Array(registry.all.enumerated()), id: \.element.id) { offset, provider in
                         RailProviderSlot(provider: provider, shortcut: offset + 2)
+                            .opacity(dragging == provider.id ? 0.4 : 1)
+                            .onDrag {
+                                dragging = provider.id
+                                return NSItemProvider(object: provider.id.rawValue as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: RailDropDelegate(
+                                target: provider.id, dragging: $dragging, registry: registry))
                     }
 
                     RailButton(name: "Add AI", help: "Add another AI by its web address",
@@ -39,6 +48,12 @@ struct ModelRail: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
             }
+            // Dropping anywhere else in the rail ends the drag.
+            .onDrop(of: [.text], isTargeted: nil) { _ in
+                dragging = nil
+                return true
+            }
+            .onChange(of: app.destination) { dragging = nil }
 
             SettingsLink {
                 Image(systemName: "gearshape.fill")
@@ -217,4 +232,29 @@ struct ProviderIcon: View {
                 .foregroundStyle(.white)
         }
     }
+}
+
+/// Drag an AI icon over another to swap places; the new order is saved.
+private struct RailDropDelegate: DropDelegate {
+    let target: ProviderID
+    @Binding var dragging: ProviderID?
+    let registry: ProviderRegistry
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            registry.move(dragging, to: target)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
+    }
+
+    func dropExited(info: DropInfo) {}
 }
