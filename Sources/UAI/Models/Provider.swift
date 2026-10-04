@@ -262,6 +262,7 @@ enum SettingsKey {
     static let autoSend = "universal.autoSend"
     static let smartRouting = "universal.smartRouting"
     static let notifications = "notifications.replies"
+    static let notificationSound = "notifications.sound"
     static let shareMemory = "memory.share"
     static let autoCaptureMedia = "media.autoCapture"
 }

@@ -13,6 +13,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UserDefaults.standard.object(forKey: SettingsKey.notifications) as? Bool ?? true
     }
 
+    var soundEnabled: Bool {
+        UserDefaults.standard.object(forKey: SettingsKey.notificationSound) as? Bool ?? true
+    }
+
     func start() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -26,11 +30,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanTitle.isEmpty && cleanTitle != provider.name { content.subtitle = cleanTitle }
         content.body = preview.isEmpty ? "Your answer is ready." : preview
-        content.sound = .default
+        content.sound = soundEnabled ? .default : nil
         content.threadIdentifier = provider.id.rawValue
         content.userInfo = ["provider": provider.id.rawValue]
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+        // Also play an audible chime directly, so you hear it even when banners are muted.
+        if soundEnabled { NSSound(named: "Glass")?.play() }
     }
 
     /// Opens System Settings at UAI's notification settings.

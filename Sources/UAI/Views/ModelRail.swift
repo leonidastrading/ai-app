@@ -222,12 +222,16 @@ struct ProviderIcon: View {
                 let fill = icon.fill ?? provider.iconFill
                 ZStack {
                     fill ?? Color.white
-                    Image(nsImage: icon.image)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        // Tiled logos are enlarged so the tile blends into the circle.
-                        .padding(fill == nil ? size * 0.2 : size * 0.04)
+                    if fill == nil {
+                        // Transparent/white logo: center it on a white circle.
+                        Image(nsImage: icon.image).resizable().interpolation(.high)
+                            .scaledToFit().padding(size * 0.2)
+                    } else {
+                        // Tiled logo: overfill so the tile's dark rounded corners
+                        // fall outside the circle, leaving a clean colored disc.
+                        Image(nsImage: icon.image).resizable().interpolation(.high)
+                            .scaledToFill().scaleEffect(1.18)
+                    }
                 }
             } else {
                 letterBadge

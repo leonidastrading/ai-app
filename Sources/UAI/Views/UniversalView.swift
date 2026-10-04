@@ -67,6 +67,7 @@ struct UniversalView: View {
                 TextField("Message Universal AI…", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 20))
+                    .autocorrectionDisabled(true)
                     .lineLimit(1...8)
                     .focused($composerFocused)
                     .onSubmit(send)

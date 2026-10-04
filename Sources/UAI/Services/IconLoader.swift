@@ -59,25 +59,30 @@ final class IconLoader: ObservableObject {
         return NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
     }
 
-    /// Samples points along the edges of the logo. If they are opaque and
-    /// roughly the same color, the logo is drawn on a tile of that color.
+    /// Samples the four corners of the logo. Corners are the background (the
+    /// logo sits in the middle), so if they're opaque and match, the logo is
+    /// on a solid tile of that color — fill the circle with it. Sampling
+    /// corners (not edge midpoints) avoids picking up the logo itself, which
+    /// is what tinted the ChatGPT icon purple.
     static func tileColor(of image: NSImage) -> Color? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let bitmap = NSBitmapImageRep(cgImage: cg)
         let w = bitmap.pixelsWide, h = bitmap.pixelsHigh
-        guard w > 4, h > 4 else { return nil }
-        let inset = max(1, w / 16)
-        let points = [(w / 2, inset), (w / 2, h - 1 - inset), (inset, h / 2), (w - 1 - inset, h / 2)]
+        guard w > 6, h > 6 else { return nil }
+        // Sample the tile just inside each edge (not the rounded corners, which
+        // may be black, and not the center, which is the logo).
+        let ix = max(1, w * 15 / 100), iy = max(1, h * 15 / 100)
+        let points = [(w / 2, iy), (w / 2, h - 1 - iy), (ix, h / 2), (w - 1 - ix, h / 2)]
         let colors = points.compactMap { bitmap.colorAt(x: $0.0, y: $0.1)?.usingColorSpace(.sRGB) }
-        guard colors.count == points.count, colors.allSatisfy({ $0.alphaComponent > 0.9 }) else { return nil }
+        guard colors.count == points.count, colors.allSatisfy({ $0.alphaComponent > 0.95 }) else { return nil }
         let first = colors[0]
         let similar = colors.allSatisfy {
             abs($0.redComponent - first.redComponent) + abs($0.greenComponent - first.greenComponent)
-                + abs($0.blueComponent - first.blueComponent) < 0.25
+                + abs($0.blueComponent - first.blueComponent) < 0.12
         }
         guard similar else { return nil }
-        // A white tile looks the same as the default badge.
-        if first.redComponent > 0.95 && first.greenComponent > 0.95 && first.blueComponent > 0.95 { return nil }
+        // Near-white corners = a transparent/white icon; draw it on white instead.
+        if first.redComponent > 0.93, first.greenComponent > 0.93, first.blueComponent > 0.93 { return nil }
         return Color(nsColor: first)
     }
 }

@@ -40,6 +40,17 @@ struct UAIApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .toolbar) {
+                Button("Zoom In") { zoomCurrent(by: 0.1) }
+                    .keyboardShortcut("=", modifiers: .command)
+                Button("Zoom Out") { zoomCurrent(by: -0.1) }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Actual Size") {
+                    if case .provider(let id) = app.destination { webViews.resetZoom(id) }
+                }
+                .keyboardShortcut("0", modifiers: .command)
+                Divider()
+            }
             CommandMenu("Go") {
                 Button("Back") { app.back(webViews: webViews) }
                     .keyboardShortcut("[", modifiers: .command)
@@ -74,6 +85,12 @@ struct UAIApp: App {
                 .environmentObject(memory)
                 .environmentObject(profile)
         }
+    }
+}
+
+extension UAIApp {
+    func zoomCurrent(by delta: Double) {
+        if case .provider(let id) = app.destination { webViews.adjustZoom(id, by: delta) }
     }
 }
 

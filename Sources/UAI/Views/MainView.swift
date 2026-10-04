@@ -3,6 +3,7 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
+    @EnvironmentObject private var profile: Profile
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
@@ -59,6 +60,11 @@ struct MainView: View {
             Notifier.shared.replied(Provider.get(id), title: title, preview: preview)
         }
         Notifier.shared.onOpen = { [weak state] id in state?.go(.provider(id)) }
+        // When Gemini is ready and the profile is empty, fill name + photo from Google.
+        webViews.onGeminiReady = {
+            guard profile.name.isEmpty, profile.avatar == nil else { return }
+            Task { _ = await profile.importFromGoogle(using: webViews) }
+        }
     }
 
     @ViewBuilder
@@ -125,9 +131,10 @@ struct GlobalSearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.7))
-            TextField("Search all AIs", text: $app.searchText)
+            TextField("", text: $app.searchText, prompt: Text("Search all AIs").foregroundColor(.white.opacity(0.75)))
                 .textFieldStyle(.plain)
                 .foregroundStyle(.white)
+                .autocorrectionDisabled(true)
                 .focused($focused)
                 .onExitCommand { app.searchText = ""; focused = false }
                 .onSubmit { app.submitSearch() }

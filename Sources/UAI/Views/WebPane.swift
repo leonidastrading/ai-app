@@ -19,6 +19,16 @@ struct WebPane: View {
                 Divider()
             }
             WebViewHost(webView: webViews.webView(for: provider.id), isHidden: !isActive)
+                .overlay {
+                    // Dark cover until the page first paints, so it never flashes white.
+                    if !webViews.firstLoaded.contains(provider.id) {
+                        ZStack {
+                            Theme.contentBackground
+                            ProgressView().controlSize(.large)
+                        }
+                        .transition(.opacity)
+                    }
+                }
         }
         .background(Theme.contentBackground)
         .opacity(isActive ? 1 : 0)

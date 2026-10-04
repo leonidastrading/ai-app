@@ -18,9 +18,14 @@ final class WebViewStore: NSObject, ObservableObject {
     @Published var lastDownload: URL?
     /// AIs whose page is currently a sign-in screen.
     @Published private(set) var needsSignIn: Set<ProviderID> = []
+    /// AIs whose page has painted at least once, so we can cover the web view
+    /// with a dark panel until then and never show a white flash.
+    @Published private(set) var firstLoaded: Set<ProviderID> = []
 
     /// Called when an AI finishes writing a reply: (provider, page title, preview).
     var onReply: ((ProviderID, String, String) -> Void)?
+    /// Called when Gemini finishes loading while signed in (for profile import).
+    var onGeminiReady: (() -> Void)?
 
     let index: ConversationIndex
     let media: MediaLibrary
@@ -31,6 +36,9 @@ final class WebViewStore: NSObject, ObservableObject {
     private var indexTimer: Timer?
     /// Media URLs already saved, so reloads don't duplicate them.
     private var capturedURLs: Set<String>
+    /// Text zoom per AI (1.0 = 100%), set with ⌘+ / ⌘- / ⌘0.
+    private var zoomLevels: [ProviderID: Double]
+    private static let zoomKey = "webview.zoom"
     private static let capturedKey = "media.capturedURLs"
 
     var autoCapture: Bool {
@@ -41,6 +49,8 @@ final class WebViewStore: NSObject, ObservableObject {
         self.index = index
         self.media = media
         capturedURLs = Set(UserDefaults.standard.stringArray(forKey: Self.capturedKey) ?? [])
+        let savedZoom = UserDefaults.standard.dictionary(forKey: Self.zoomKey) as? [String: Double] ?? [:]
+        zoomLevels = Dictionary(uniqueKeysWithValues: savedZoom.map { (ProviderID(rawValue: $0.key), $0.value) })
         super.init()
         indexTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.indexAll() }
@@ -100,22 +110,31 @@ final class WebViewStore: NSObject, ObservableObject {
 
     /// Reads the signed-in Google account's name and avatar from the Gemini
     /// web view, so the profile can use them. Nil if Gemini isn't signed in.
-    func googleIdentity() async -> GoogleIdentity? {
-        let webView = webView(for: .gemini)
+    /// `wait` false does a single quick check (for silent auto-import).
+    func googleIdentity(wait: Bool = true) async -> GoogleIdentity? {
+        let webView = self.webView(for: .gemini)
         let script = """
         (() => {
-          const a = document.querySelector('a[aria-label^="Google Account"], a[aria-label*="Google Account"]');
           let name = '', img = '';
-          if (a) {
-            const m = (a.getAttribute('aria-label') || '').match(/Google Account:?\\s*([^(\\n]+)/);
-            if (m) name = m[1].trim();
-            const im = a.querySelector('img'); if (im) img = im.src;
+          // The account button carries a label like "Google Account: Vadim (vadim54@gmail.com)".
+          const labels = [...document.querySelectorAll('[aria-label*="Google Account" i], [aria-label*="Account:" i]')];
+          for (const el of labels) {
+            const m = (el.getAttribute('aria-label') || '').match(/Account:?\\s*([^(\\n]+?)\\s*[\\(\\n]/);
+            if (m && m[1].trim()) { name = m[1].trim(); break; }
           }
-          if (!img) { const im = document.querySelector('img[alt*="Account" i], img[src*="googleusercontent"]'); if (im) img = im.src; }
+          // Profile photo: Google serves it from googleusercontent.com.
+          const photo = [...document.querySelectorAll('img')].find(i =>
+            /googleusercontent\\.com|lh3\\.google/.test(i.currentSrc || i.src || ''));
+          if (photo) img = photo.currentSrc || photo.src;
+          // Fallbacks for the name from alt text.
+          if (!name && photo) {
+            const alt = (photo.getAttribute('alt') || '').replace(/profile photo|avatar/ig, '').trim();
+            if (alt && alt.length < 40) name = alt;
+          }
           return JSON.stringify({ name, img });
         })()
         """
-        for _ in 0..<6 {
+        for _ in 0..<(wait ? 6 : 1) {
             if let json = await evaluate(script, in: webView), let data = json.data(using: .utf8),
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                !(obj["name"]?.isEmpty ?? true) || !(obj["img"]?.isEmpty ?? true) {
@@ -138,6 +157,7 @@ final class WebViewStore: NSObject, ObservableObject {
         webViews[id] = nil
         loaded.remove(id)
         needsSignIn.remove(id)
+        firstLoaded.remove(id)
     }
 
     func goHome(_ id: ProviderID) {
@@ -347,29 +367,53 @@ extension WebViewStore {
       if (window.__uaiMedia) return;
       window.__uaiMedia = true;
       const seen = new Set();
-      const skip = /avatar|favicon|logo|icon|emoji|profile|sprite|thumb_small|spinner/i;
-      const grab = async (src, name) => {
+      const skip = /avatar|favicon|logo|icon|emoji|profile|sprite|thumb_small|spinner|badge/i;
+      const send = (url, name, dataURL) =>
+        window.webkit.messageHandlers.uai.postMessage({ type: 'media', url, name, dataURL });
+
+      // Draw a loaded <img> onto a canvas and read its PNG bytes. Works for
+      // cross-origin images only when the server allows it; otherwise throws.
+      const viaCanvas = (img) => {
         try {
-          const r = await fetch(src, { credentials: 'include' });
-          if (!r.ok) throw 0;
-          const blob = await r.blob();
-          if (blob.size < 8000 || blob.size > 25000000) {
-            if (blob.size < 8000) return;           // too small = an icon
-            window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name });
-            return;
-          }
-          const dataURL = await new Promise((res, rej) => {
-            const fr = new FileReader();
-            fr.onloadend = () => res(fr.result);
-            fr.onerror = rej;
-            fr.readAsDataURL(blob);
-          });
-          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name, dataURL });
-        } catch (e) {
-          // Cross-origin fetch blocked: hand the URL to the app to try.
-          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name });
-        }
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          c.getContext('2d').drawImage(img, 0, 0);
+          return c.toDataURL('image/png');
+        } catch (e) { return null; }
       };
+
+      const grab = async (img, src, name) => {
+        // 1) A fresh CORS-anonymous image usually lets us read Google/OpenAI CDN pixels.
+        const clone = new Image();
+        clone.crossOrigin = 'anonymous';
+        const done = new Promise((res) => {
+          clone.onload = () => res(viaCanvas(clone));
+          clone.onerror = () => res(null);
+          setTimeout(() => res(null), 6000);
+        });
+        clone.src = src;
+        let dataURL = await done;
+        // 2) Same-origin / blob: images can be fetched directly.
+        if (!dataURL) {
+          for (const opts of [{}, { credentials: 'include' }]) {
+            try {
+              const r = await fetch(src, opts);
+              if (!r.ok) continue;
+              const blob = await r.blob();
+              if (blob.size < 12000) return;
+              dataURL = await new Promise((res, rej) => {
+                const fr = new FileReader();
+                fr.onloadend = () => res(fr.result); fr.onerror = rej;
+                fr.readAsDataURL(blob);
+              });
+              break;
+            } catch (e) { /* try next */ }
+          }
+        }
+        // 3) Last resort: hand the app the URL to download with your cookies.
+        send(src, name, dataURL || undefined);
+      };
+
       const consider = () => {
         const scope = document.querySelector('main') || document.body;
         if (!scope) return;
@@ -378,19 +422,20 @@ extension WebViewStore {
           if (!src || seen.has(src) || skip.test(src)) continue;
           if (/^data:image\\/(gif|svg)/.test(src)) continue;
           const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-          if (w < 256 || h < 256) continue;
+          // Generated images are large; this skips inline icons and stickers.
+          if (w < 320 || h < 320) continue;
           seen.add(src);
-          grab(src, (img.getAttribute('alt') || '').slice(0, 60));
+          grab(img, src, (img.getAttribute('alt') || '').slice(0, 60));
         }
         for (const v of scope.querySelectorAll('video')) {
           const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
           if (!src || seen.has(src) || src.startsWith('blob:')) continue;
           seen.add(src);
-          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name: '' });
+          send(src, '', undefined);
         }
       };
-      setInterval(consider, 3000);
-      setTimeout(consider, 1500);
+      setInterval(consider, 2500);
+      setTimeout(consider, 1200);
     })();
     """
 
@@ -615,6 +660,11 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateSignInState(for: webView)
+        if let id = provider(of: webView) {
+            firstLoaded.insert(id)
+            applyZoom(id)
+            if id == .gemini, !Self.isSignInURL(webView.url) { onGeminiReady?() }
+        }
         focusComposer(in: webView)
         if let id = provider(of: webView) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak webView] in
@@ -646,6 +696,31 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
                 webView?.evaluateJavaScript(script)
             }
         }
+    }
+
+    // MARK: - Text zoom (⌘+/⌘-/⌘0)
+
+    func adjustZoom(_ id: ProviderID, by delta: Double) {
+        let level = max(0.5, min(3.0, (zoomLevels[id] ?? 1.0) + delta))
+        zoomLevels[id] = level
+        saveZoom()
+        applyZoom(id)
+    }
+
+    func resetZoom(_ id: ProviderID) {
+        zoomLevels[id] = 1.0
+        saveZoom()
+        applyZoom(id)
+    }
+
+    private func applyZoom(_ id: ProviderID) {
+        let level = zoomLevels[id] ?? 1.0
+        webViews[id]?.evaluateJavaScript("document.documentElement.style.zoom='\(level)';")
+    }
+
+    private func saveZoom() {
+        UserDefaults.standard.set(Dictionary(uniqueKeysWithValues: zoomLevels.map { ($0.key.rawValue, $0.value) }),
+                                  forKey: Self.zoomKey)
     }
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,

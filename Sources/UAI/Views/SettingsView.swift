@@ -120,6 +120,7 @@ private struct UniversalSettings: View {
     @AppStorage(SettingsKey.smartRouting) private var smartRouting = true
     @AppStorage(SettingsKey.shareMemory) private var shareMemory = true
     @AppStorage(SettingsKey.notifications) private var notify = true
+    @AppStorage(SettingsKey.notificationSound) private var notifySound = true
     @State private var apiKey = Keychain.read(Keychain.anthropicKey) ?? ""
     @State private var saved = false
 
@@ -131,6 +132,7 @@ private struct UniversalSettings: View {
             }
             Section {
                 Toggle("Notify me when an AI replies", isOn: $notify)
+                Toggle("Play a sound when an AI replies", isOn: $notifySound)
                 Button("Notification Settings…") { Notifier.shared.openSystemSettings() }
             } header: {
                 Text("Notifications")

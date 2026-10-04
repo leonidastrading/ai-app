@@ -22,11 +22,15 @@ enum Theme {
                 .init(color: aqua, location: 1)],
         startPoint: .top, endPoint: .bottom)
 
-    /// Top bar: the diagonal stripe band, indigo to pink.
-    static let toolbar = LinearGradient(colors: [indigo, violet, pink],
-                                        startPoint: .leading, endPoint: .trailing)
+    /// Top bar: a darker band than the rail so white text and the search
+    /// placeholder stay readable across it.
+    static let toolbar = LinearGradient(
+        colors: [Color(red: 0.16, green: 0.14, blue: 0.34),
+                 Color(red: 0.26, green: 0.14, blue: 0.34),
+                 Color(red: 0.34, green: 0.15, blue: 0.33)],
+        startPoint: .leading, endPoint: .trailing)
 
-    static let searchField = Color.white.opacity(0.22)
+    static let searchField = Color.black.opacity(0.32)
     static let selectionRing = Color.white
     static let accent = pink
     /// Content area background (near-black, same as every window).
