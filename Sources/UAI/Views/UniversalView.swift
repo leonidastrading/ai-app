@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Universal AI: type once, and UAI sends the prompt to whichever AI suits
 /// the task best, as a new chat in that AI under your own account.
@@ -14,15 +15,20 @@ struct UniversalView: View {
     @State private var draft = ""
     @State private var override: ProviderID?
     @State private var sending = false
+    @State private var attachments: [Attachment] = []
     @FocusState private var composerFocused: Bool
 
     private var z: CGFloat { CGFloat(app.uiZoom) }
     private var enabled: [ProviderID] { Provider.all.filter(\.isEnabled).map(\.id) }
+    private var hasImageAttachment: Bool { attachments.contains(where: \.isImage) }
+    private var canSend: Bool {
+        !sending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+    }
     private var preview: RouteDecision? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty || !attachments.isEmpty else { return nil }
         if let override { return RouteDecision(provider: override, reason: "Chosen by you", routedBy: "You") }
-        return Router.rules(text, among: enabled)
+        return Router.rules(text, among: enabled, imageAttached: hasImageAttachment)
     }
 
     var body: some View {
@@ -72,30 +78,42 @@ struct UniversalView: View {
 
     private var composer: some View {
         VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                TextField("Message Universal AI…", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 20 * z))
-                    .autocorrectionDisabled(true)
-                    .lineLimit(1...8)
-                    .focused($composerFocused)
-                    .onSubmit(send)
-                    .padding(.vertical, 4)
-                Button(action: send) {
-                    Image(systemName: sending ? "hourglass" : "arrow.up")
-                        .font(.system(size: 18 * z, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40 * z, height: 40 * z)
-                        .background(draft.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.4) : Theme.pink,
-                                    in: Circle())
+            VStack(spacing: 10) {
+                if !attachments.isEmpty { attachmentStrip }
+                HStack(alignment: .top, spacing: 10) {
+                    Button(action: pickFiles) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 18 * z, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32 * z, height: 32 * z)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Attach an image or file to send along with your prompt")
+                    TextField("Message Universal AI, or attach an image and say what to do…",
+                              text: $draft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 20 * z))
+                        .autocorrectionDisabled(true)
+                        .lineLimit(1...8)
+                        .focused($composerFocused)
+                        .onSubmit(send)
+                        .padding(.vertical, 4)
+                    Button(action: send) {
+                        Image(systemName: sending ? "hourglass" : "arrow.up")
+                            .font(.system(size: 18 * z, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40 * z, height: 40 * z)
+                            .background(canSend ? Theme.pink : Color.gray.opacity(0.4), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .keyboardShortcut(.return, modifiers: .command)
                 }
-                .buttonStyle(.plain)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
-                .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.pink.opacity(composerFocused ? 0.6 : 0.2), lineWidth: 1.5))
+            .onDrop(of: [.fileURL, .image], isTargeted: nil, perform: handleDrop)
 
             HStack(spacing: 14) {
                 Menu {
@@ -122,6 +140,70 @@ struct UniversalView: View {
             }
             .padding(.horizontal, 4)
         }
+    }
+
+    private var attachmentStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments) { att in
+                    HStack(spacing: 6) {
+                        if let thumb = att.thumbnail {
+                            Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
+                                .frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 6))
+                        } else {
+                            Image(systemName: "doc.fill").foregroundStyle(.secondary).frame(width: 28, height: 28)
+                        }
+                        Text(att.name).font(.caption).lineLimit(1).frame(maxWidth: 140)
+                        Button {
+                            attachments.removeAll { $0.id == att.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func pickFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            for url in panel.urls { addAttachment(from: url) }
+        }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            handled = true
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                DispatchQueue.main.async { addAttachment(from: url) }
+            }
+        }
+        return handled
+    }
+
+    private func addAttachment(from url: URL) {
+        let needsScope = url.startAccessingSecurityScopedResource()
+        defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
+        guard let att = Attachment.load(from: url) else {
+            app.show(toast: "Couldn't attach \(url.lastPathComponent) (too large or unreadable).")
+            return
+        }
+        if attachments.count >= 6 {
+            app.show(toast: "You can attach up to 6 files at a time.")
+            return
+        }
+        attachments.append(att)
     }
 
     private func routePreview(_ preview: RouteDecision) -> some View {
@@ -164,32 +246,44 @@ struct UniversalView: View {
 
     private func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !sending else { return }
+        let files = attachments
+        guard (!prompt.isEmpty || !files.isEmpty), !sending else { return }
         sending = true
         let chosen = override
+        let imageAttached = files.contains(where: \.isImage)
         Task {
             let decision: RouteDecision
             if let chosen {
                 decision = RouteDecision(provider: chosen, reason: "Chosen by you", routedBy: "You")
             } else {
-                decision = await Router.route(prompt, among: enabled)
+                decision = await Router.route(prompt, among: enabled, imageAttached: imageAttached)
             }
-            universal.add(RoutedPrompt(date: Date(), prompt: prompt, provider: decision.provider,
+            let logged = prompt.isEmpty && !files.isEmpty
+                ? "\(files.count) attachment\(files.count == 1 ? "" : "s")"
+                : prompt
+            universal.add(RoutedPrompt(date: Date(), prompt: logged, provider: decision.provider,
                                        reason: decision.reason, routedBy: decision.routedBy))
             draft = ""
             override = nil
+            attachments = []
             sending = false
             app.go(.provider(decision.provider))
 
             let name = Provider.get(decision.provider).name
-            let message = memory.prompt(prompt, for: decision.provider)
-            switch await webViews.deliver(message, to: decision.provider, autoSend: autoSend) {
+            let message = prompt.isEmpty ? "" : memory.prompt(prompt, for: decision.provider)
+            switch await webViews.deliver(message, to: decision.provider, autoSend: autoSend, attachments: files) {
             case .sent: app.show(toast: "Sent to \(name) · \(decision.reason)")
-            case .inserted: app.show(toast: "Prompt is ready in \(name). Press Return to send.")
+            case .inserted:
+                app.show(toast: files.isEmpty
+                    ? "Prompt is ready in \(name). Press Return to send."
+                    : "Your \(files.count == 1 ? "file" : "files") and prompt are ready in \(name). Review, then press Return to send.")
             case .failed:
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(message, forType: .string)
-                app.show(toast: "Couldn't find \(name)'s message box (signed in?). Prompt copied; paste with ⌘V.")
+                if !message.isEmpty {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message, forType: .string)
+                }
+                app.show(toast: "Couldn't find \(name)'s message box (signed in?)."
+                    + (message.isEmpty ? "" : " Prompt copied; paste with ⌘V."))
             }
         }
     }

@@ -13,13 +13,17 @@ struct RouteDecision: Equatable {
 /// - `claude`: asks Claude (via an optional Anthropic API key in Settings)
 ///   to pick, falling back to rules if the call fails.
 enum Router {
-    static func route(_ prompt: String, among enabled: [ProviderID]) async -> RouteDecision {
+    static func route(_ prompt: String, among enabled: [ProviderID], imageAttached: Bool = false) async -> RouteDecision {
         let smart = UserDefaults.standard.object(forKey: SettingsKey.smartRouting) as? Bool ?? true
-        if smart, let key = AnthropicClient.apiKey,
-           let decision = try? await ClaudeRouter.route(prompt, among: enabled, apiKey: key) {
-            return decision
+        if smart, let key = AnthropicClient.apiKey {
+            let hint = imageAttached
+                ? prompt + "\n\n[The user attached an image to this request. Prefer an assistant that can see or edit images.]"
+                : prompt
+            if let decision = try? await ClaudeRouter.route(hint, among: enabled, apiKey: key) {
+                return decision
+            }
         }
-        return rules(prompt, among: enabled)
+        return rules(prompt, among: enabled, imageAttached: imageAttached)
     }
 
     // MARK: Rules
@@ -62,7 +66,7 @@ enum Router {
                         "proofread", "rewrite", "document", "pdf", "contract", "analyze", "analysis"]),
     ]
 
-    static func rules(_ prompt: String, among enabled: [ProviderID]) -> RouteDecision {
+    static func rules(_ prompt: String, among enabled: [ProviderID], imageAttached: Bool = false) -> RouteDecision {
         let text = " " + prompt.lowercased() + " "
         var best: (Rule, Int)?
         for rule in rulesTable {
@@ -73,6 +77,11 @@ enum Router {
         }
         if let rule = best?.0, let provider = rule.providers.first(where: enabled.contains) {
             return RouteDecision(provider: provider, reason: rule.reason, routedBy: "Rules")
+        }
+        // No keyword matched. If an image is attached, send it to an AI that can
+        // actually see and edit images rather than the general-purpose fallback.
+        if imageAttached, let provider = [.gemini, .chatgpt, .claude].first(where: enabled.contains) {
+            return RouteDecision(provider: provider, reason: "Work with the attached image", routedBy: "Rules")
         }
         let fallback: ProviderID = enabled.contains(.claude) ? .claude : (enabled.first ?? .claude)
         return RouteDecision(provider: fallback, reason: "General question", routedBy: "Rules")

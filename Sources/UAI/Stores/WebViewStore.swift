@@ -225,9 +225,12 @@ final class WebViewStore: NSObject, ObservableObject {
     enum DeliveryResult { case sent, inserted, failed }
 
     /// Starts a new chat in the provider and types `prompt` into its message box,
-    /// pressing send when `autoSend` is on. Works by scripting the provider's
-    /// own page, so the chat is created under your account and syncs everywhere.
-    func deliver(_ prompt: String, to id: ProviderID, autoSend: Bool, newChat: Bool = true) async -> DeliveryResult {
+    /// pressing send when `autoSend` is on. Any `attachments` are dropped into
+    /// the AI's composer (as if you'd dragged the files in). Works by scripting
+    /// the provider's own page, so the chat is created under your account and
+    /// syncs everywhere.
+    func deliver(_ prompt: String, to id: ProviderID, autoSend: Bool,
+                 attachments: [Attachment] = [], newChat: Bool = true) async -> DeliveryResult {
         let webView = webView(for: id)
         if newChat {
             webView.load(URLRequest(url: Provider.get(id).homeURL))
@@ -238,7 +241,11 @@ final class WebViewStore: NSObject, ObservableObject {
             try? await Task.sleep(for: .milliseconds(250))
         }
 
-        let script = Self.deliverScript(prompt: prompt, autoSend: autoSend, replace: newChat)
+        // Never auto-send while files are still uploading — the AI needs a
+        // moment to read the dropped files before the message goes out.
+        let effectiveAutoSend = autoSend && attachments.isEmpty
+        let script = Self.deliverScript(prompt: prompt, autoSend: effectiveAutoSend,
+                                        replace: newChat, attachments: attachments)
         for _ in 0..<(newChat ? 30 : 4) {
             let result = await evaluate(script, in: webView)
             switch result {
@@ -250,11 +257,17 @@ final class WebViewStore: NSObject, ObservableObject {
         return .failed
     }
 
-    private static func deliverScript(prompt: String, autoSend: Bool, replace: Bool) -> String {
+    private struct FilePayload: Encodable { let name: String; let mime: String; let dataURL: String }
+
+    private static func deliverScript(prompt: String, autoSend: Bool, replace: Bool,
+                                      attachments: [Attachment]) -> String {
         let literal = (try? String(data: JSONEncoder().encode(prompt), encoding: .utf8)) ?? "\"\""
+        let payload = attachments.map { FilePayload(name: $0.name, mime: $0.mime, dataURL: $0.dataURL) }
+        let filesLiteral = (try? String(data: JSONEncoder().encode(payload), encoding: .utf8)) ?? "[]"
         return """
         (() => {
           const text = \(literal);
+          const files = \(filesLiteral);
           const autoSend = \(autoSend ? "true" : "false");
           const replace = \(replace ? "true" : "false");
           const visible = el => {
@@ -267,6 +280,32 @@ final class WebViewStore: NSObject, ObservableObject {
           boxes.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
           const box = boxes[0];
           box.focus();
+          // Drop any attached files into the composer, as if dragged in. Most
+          // AIs (ChatGPT, Gemini, Claude, Grok) accept a drop with a DataTransfer.
+          if (files.length) {
+            try {
+              const toFile = (d, name, type) => {
+                const a = d.split(','); const b = atob(a[1]); let n = b.length;
+                const u = new Uint8Array(n); while (n--) u[n] = b.charCodeAt(n);
+                return new File([u], name, { type });
+              };
+              const dt = new DataTransfer();
+              for (const f of files) dt.items.add(toFile(f.dataURL, f.name, f.mime));
+              // Prefer a real file <input> if the composer has one — most reliable.
+              const inputs = [...document.querySelectorAll('input[type="file"]')];
+              let usedInput = false;
+              for (const inp of inputs) {
+                try { inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true })); usedInput = true; break; } catch (e) {}
+              }
+              if (!usedInput) {
+                const r = box.getBoundingClientRect();
+                const opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: r.top + 20 };
+                box.dispatchEvent(new DragEvent('dragenter', opt));
+                box.dispatchEvent(new DragEvent('dragover', opt));
+                box.dispatchEvent(new DragEvent('drop', opt));
+              }
+            } catch (e) {}
+          }
           if (box.tagName === 'TEXTAREA') {
             const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
             setter.call(box, replace || !box.value ? text : text + '\\n\\n' + box.value);
