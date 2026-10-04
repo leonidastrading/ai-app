@@ -19,10 +19,20 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      - name: Load Sparkle public key
+        id: edkey
+        run: |
+          if [ -f packaging/sparkle_eddsa_pub.txt ]; then
+            echo "key=$(tr -d '\n' < packaging/sparkle_eddsa_pub.txt)" >> "$GITHUB_OUTPUT"
+          else
+            echo "key=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build UAI.app
         env:
           UAI_VERSION: 0.1.${{ github.run_number }}
           UAI_BUILD: ${{ github.run_number }}
+          SPARKLE_PUBKEY: ${{ steps.edkey.outputs.key }}
         run: ./scripts/build-app.sh
 
       - name: Smoke test (launches and stays running)
@@ -48,3 +58,37 @@ jobs:
           # Never mark a Mac release "Latest": the Windows auto-updater reads
           # the Latest release's latest.yml, which Mac releases don't have.
           make_latest: false
+
+      # Sign this build and publish the Sparkle appcast so installed copies can
+      # auto-update. Skipped automatically until the SPARKLE_PRIVATE_KEY secret
+      # is set (run the "Sparkle keygen" workflow once, then add the secret).
+      - name: Sign update & publish appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN: ${{ github.run_number }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY not set — skipping appcast (auto-update not configured yet)."
+            exit 0
+          fi
+          GEN="$(find .build -name generate_appcast -type f | head -1)"
+          if [ -z "$GEN" ]; then echo "generate_appcast not found in .build"; exit 1; fi
+
+          # generate_appcast reads the app version from the zip and signs the
+          # enclosure, pointing it at this build's release asset.
+          mkdir -p appcast_build
+          cp build/UAI.zip appcast_build/
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > sparkle_priv.key
+          "$GEN" --ed-key-file sparkle_priv.key \
+                 --download-url-prefix "https://github.com/leonidastrading/ai-app/releases/download/mac-v0.1.$RUN/" \
+                 appcast_build
+          rm -f sparkle_priv.key
+          test -f appcast_build/appcast.xml
+          cat appcast_build/appcast.xml
+
+          # Host the feed on a fixed 'appcast' release so SUFeedURL stays stable.
+          gh release view appcast >/dev/null 2>&1 || \
+            gh release create appcast --title "UAI update feed" \
+              --notes "Sparkle appcast for UAI auto-update (updated by CI)." --target "$GITHUB_SHA"
+          gh release upload appcast appcast_build/appcast.xml --clobber

@@ -179,11 +179,28 @@ private struct UniversalSettings: View {
 private struct DataSettings: View {
     @EnvironmentObject private var universal: UniversalStore
     @EnvironmentObject private var memory: MemoryStore
+    @EnvironmentObject private var updater: Updater
     @AppStorage(SettingsKey.autoCaptureMedia) private var autoCapture = true
     @State private var confirmSignOut = false
 
     var body: some View {
         Form {
+            Section {
+                LabeledContent("Version", value: "UAI \(Updater.versionString)")
+                HStack {
+                    Button("Check for Updates…") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                    if !updater.isConfigured {
+                        Text("Auto-update isn't set up for this build yet.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("UAI updates itself from GitHub — it checks in the background, verifies each update, and installs it on quit. No manual reinstall.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section {
                 Toggle("Automatically save generated images and videos", isOn: $autoCapture)
                 LabeledContent("Folder", value: Paths.media.path)

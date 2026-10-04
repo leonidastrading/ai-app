@@ -12,6 +12,7 @@ struct UAIApp: App {
     @StateObject private var memory: MemoryStore
     @StateObject private var profile = Profile()
     @StateObject private var notifHistory = NotificationHistory()
+    @StateObject private var updater = Updater()
     @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
@@ -42,6 +43,10 @@ struct UAIApp: App {
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
             CommandGroup(after: .toolbar) {
                 Button("Zoom In") { zoomCurrent(by: 0.1) }
                     .keyboardShortcut("=", modifiers: .command)
@@ -86,6 +91,7 @@ struct UAIApp: App {
                 .environmentObject(webViews)
                 .environmentObject(memory)
                 .environmentObject(profile)
+                .environmentObject(updater)
         }
     }
 }

@@ -1,0 +1,71 @@
+name: Sparkle keygen (run once)
+
+# Generates the EdDSA key pair Sparkle uses to sign/verify updates.
+# Run this ONCE (Actions tab -> "Sparkle keygen" -> Run workflow). It:
+#   1. commits the PUBLIC key to packaging/sparkle_eddsa_pub.txt (safe to share),
+#   2. uploads the PRIVATE key as a workflow artifact ("sparkle-private-key").
+# Then: download that artifact, open the file, and paste its one line into a new
+# repo secret named SPARKLE_PRIVATE_KEY (Settings -> Secrets and variables ->
+# Actions). After that, every "Build UAI" run signs itself and auto-update works.
+# Delete this run (and the artifact) once the secret is set — the private key is
+# the one secret that lets someone ship code to every user.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keygen:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Sparkle (fetch its tools)
+        run: swift build
+
+      - name: Locate generate_keys
+        id: tool
+        run: |
+          GEN="$(find .build -name generate_keys -type f | head -1)"
+          test -n "$GEN"
+          echo "gen=$GEN" >> "$GITHUB_OUTPUT"
+
+      - name: Create a scratch keychain
+        run: |
+          security create-keychain -p "" sparkle.keychain
+          security set-keychain-settings sparkle.keychain
+          security unlock-keychain -p "" sparkle.keychain
+          security list-keychains -d user -s sparkle.keychain login.keychain-db
+          security default-keychain -s sparkle.keychain
+
+      - name: Generate key pair
+        run: |
+          "${{ steps.tool.outputs.gen }}" 2>&1 | tee genout.txt
+          PUB="$(grep -A1 'SUPublicEDKey' genout.txt | grep '<string>' | sed -E 's|.*<string>(.*)</string>.*|\1|' | head -1)"
+          if [ -z "$PUB" ]; then
+            # Fallback: a bare base64 line (44 chars ending in '=').
+            PUB="$(grep -Eo '[A-Za-z0-9+/]{43}=' genout.txt | head -1)"
+          fi
+          test -n "$PUB"
+          printf '%s' "$PUB" > packaging/sparkle_eddsa_pub.txt
+          echo "Public key: $PUB"
+          # Export the private key for the CI secret.
+          "${{ steps.tool.outputs.gen }}" -x sparkle_private.key
+          test -s sparkle_private.key
+
+      - name: Commit the public key
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packaging/sparkle_eddsa_pub.txt
+          git commit -m "Sparkle: add EdDSA public key for auto-update" || echo "nothing to commit"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Upload the private key (add it as the SPARKLE_PRIVATE_KEY secret, then delete this run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkle-private-key
+          path: sparkle_private.key
+          retention-days: 1
