@@ -16,6 +16,7 @@ struct UniversalView: View {
     @State private var sending = false
     @FocusState private var composerFocused: Bool
 
+    private var z: CGFloat { CGFloat(app.uiZoom) }
     private var enabled: [ProviderID] { Provider.all.filter(\.isEnabled).map(\.id) }
     private var preview: RouteDecision? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,21 +43,29 @@ struct UniversalView: View {
             }
         }
         .background(Theme.contentBackground)
-        .onAppear { focusSoon() }
+        .onAppear { focusSoon(); takePendingPrompt() }
         // Coming back to Universal AI from an AI should re-focus the box.
         .onChange(of: app.destination) { if app.destination == .universal { focusSoon() } }
+        .onChange(of: app.pendingPrompt) { takePendingPrompt() }
     }
 
     private func focusSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { composerFocused = true }
     }
 
+    private func takePendingPrompt() {
+        guard let p = app.pendingPrompt else { return }
+        draft = p
+        app.pendingPrompt = nil
+        focusSoon()
+    }
+
     private var hero: some View {
         VStack(spacing: 12) {
-            GalaxyIcon(size: 72)
-            Text("Universal AI").font(.system(size: 30, weight: .bold))
+            GalaxyIcon(size: 72 * z)
+            Text("Universal AI").font(.system(size: 30 * z, weight: .bold))
             Text("Ask anything. UAI picks the best AI and starts the chat there.")
-                .font(.title3).foregroundStyle(.secondary)
+                .font(.system(size: 17 * z)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
     }
@@ -66,7 +75,7 @@ struct UniversalView: View {
             HStack(alignment: .top, spacing: 10) {
                 TextField("Message Universal AI…", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 20))
+                    .font(.system(size: 20 * z))
                     .autocorrectionDisabled(true)
                     .lineLimit(1...8)
                     .focused($composerFocused)
@@ -74,9 +83,9 @@ struct UniversalView: View {
                     .padding(.vertical, 4)
                 Button(action: send) {
                     Image(systemName: sending ? "hourglass" : "arrow.up")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 18 * z, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 40 * z, height: 40 * z)
                         .background(draft.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.4) : Theme.pink,
                                     in: Circle())
                 }

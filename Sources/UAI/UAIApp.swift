@@ -46,7 +46,7 @@ struct UAIApp: App {
                 Button("Zoom Out") { zoomCurrent(by: -0.1) }
                     .keyboardShortcut("-", modifiers: .command)
                 Button("Actual Size") {
-                    if case .provider(let id) = app.destination { webViews.resetZoom(id) }
+                    if case .provider(let id) = app.destination { webViews.resetZoom(id) } else { app.resetUIZoom() }
                 }
                 .keyboardShortcut("0", modifiers: .command)
                 Divider()
@@ -91,6 +91,7 @@ struct UAIApp: App {
 extension UAIApp {
     func zoomCurrent(by delta: Double) {
         if case .provider(let id) = app.destination { webViews.adjustZoom(id, by: delta) }
+        else { app.adjustUIZoom(by: delta) }
     }
 }
 

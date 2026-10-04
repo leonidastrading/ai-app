@@ -20,6 +20,8 @@ final class AppState: ObservableObject {
     @Published var searchResultCount = 0
     @Published var submitSearchTick = 0
     @Published var toast: String?
+    /// Font scale for UAI's own pages (Universal, Media, Memory), set with ⌘+/⌘-.
+    @Published var uiZoom: Double = max(0.7, min(2.0, UserDefaults.standard.object(forKey: "ui.zoom") as? Double ?? 1.0))
     /// Replies you haven't looked at yet, per AI. Mirrored on the Dock icon.
     @Published private(set) var unread: [ProviderID: Int] = [:] {
         didSet {
@@ -30,6 +32,11 @@ final class AppState: ObservableObject {
     /// A copied link (e.g. an emailed sign-in link) UAI offers to open in an AI.
     @Published var pendingLink: (provider: ProviderID, url: URL)?
     @Published var showAddAI = false
+    @Published var showRightBar: Bool = UserDefaults.standard.object(forKey: "ui.rightBar") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showRightBar, forKey: "ui.rightBar") }
+    }
+    /// A suggestion the right bar sends to the Universal composer.
+    @Published var pendingPrompt: String?
     private var lastPasteboardChange = NSPasteboard.general.changeCount
 
     private var backStack: [Destination] = []
@@ -157,6 +164,16 @@ final class AppState: ObservableObject {
     func moveSearchSelection(_ delta: Int) {
         guard searchResultCount > 0 else { return }
         searchSelection = (searchSelection + delta + searchResultCount) % searchResultCount
+    }
+
+    func adjustUIZoom(by delta: Double) {
+        uiZoom = max(0.7, min(2.0, uiZoom + delta))
+        UserDefaults.standard.set(uiZoom, forKey: "ui.zoom")
+    }
+
+    func resetUIZoom() {
+        uiZoom = 1.0
+        UserDefaults.standard.set(uiZoom, forKey: "ui.zoom")
     }
 
     func show(toast message: String) {

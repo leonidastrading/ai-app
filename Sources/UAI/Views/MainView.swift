@@ -37,6 +37,9 @@ struct MainView: View {
                 }
                 .animation(.easeOut(duration: 0.15), value: app.searchText.isEmpty)
                 .animation(.easeOut(duration: 0.2), value: app.toast)
+            if app.showRightBar {
+                RightBar().transition(.move(edge: .trailing))
+            }
         }
         .toolbar { TopBar() }
         .toolbarBackground(Theme.toolbar, for: .windowToolbar)
@@ -56,7 +59,10 @@ struct MainView: View {
     private func connectNotifications() {
         let state = app
         webViews.onReply = { [weak state] id, title, preview in
-            guard let state, state.replyArrived(from: id) else { return }
+            guard let state else { return }
+            let url = webViews.existingWebView(for: id)?.url?.absoluteString
+            history.add(provider: id, title: title, preview: preview, url: url)
+            guard state.replyArrived(from: id) else { return }
             Notifier.shared.replied(Provider.get(id), title: title, preview: preview)
         }
         Notifier.shared.onOpen = { [weak state] id in state?.go(.provider(id)) }
@@ -120,6 +126,10 @@ struct TopBar: ToolbarContent {
                     .labelStyle(.titleAndIcon)
             }
             .help("Everything your AIs generated (⇧⌘M)")
+            Button { withAnimation(.easeInOut(duration: 0.2)) { app.showRightBar.toggle() } } label: {
+                Image(systemName: app.showRightBar ? "sidebar.trailing" : "sidebar.right")
+            }
+            .help("Show or hide the activity panel")
         }
     }
 }
