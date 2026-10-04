@@ -70,8 +70,7 @@ final class WebViewStore: NSObject, ObservableObject {
         webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
-        // Never flash white: let the dark window show through until the page paints.
-        webView.isOpaque = false
+        // Never flash white: the under-page color shows until the page paints.
         webView.underPageBackgroundColor = Theme.windowBackgroundNS
         webView.wantsLayer = true
         webView.layer?.backgroundColor = Theme.windowBackgroundNS.cgColor
