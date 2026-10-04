@@ -167,9 +167,6 @@ function onWebviewMessage(id, e) {
   } else if (e.channel === "media") {
     const d = e.args[0] || {};
     window.api.saveMedia({ dataURL: d.dataURL, name: d.name, role: d.role, providerName: p ? p.name : "Other" });
-  } else if (e.channel === "profile") {
-    const d = e.args[0] || {};
-    if (d && (d.name || d.avatar)) setProfile(d);
   } else if (e.channel === "prompt") {
     const d = e.args[0] || {};
     if (d && d.text) addGlobalRecent(id, p ? p.name : "AI", d.text);
@@ -507,6 +504,11 @@ document.getElementById("profile-save").onclick = () => {
   window.api.setState({ profile });
   renderProfile();
   pendingPhoto = null;
+};
+document.getElementById("profile-clear").onclick = () => {
+  profile = {}; pendingPhoto = null;
+  window.api.setState({ profile });
+  renderProfile(); fillProfileSettings();
 };
 
 // -------------------------------------------------------------- updates

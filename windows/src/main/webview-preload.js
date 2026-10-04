@@ -10,7 +10,6 @@ function start() {
   mediaCapture();
   autofocus();
   noAutocorrect();
-  profileScrape();
   captureSends();
 }
 
@@ -34,30 +33,8 @@ function captureSends() {
   }, true);
 }
 
-// On Google pages (Gemini signs you in with Google), read the account name and
-// photo so UAI can show who's signed in. Only runs on *.google.com.
-function profileScrape() {
-  if (!/(^|\.)google\.com$/.test(location.hostname)) return;
-  const sendIf = () => {
-    let name = "", avatar = "";
-    const btn = document.querySelector('[aria-label*="Google Account" i]');
-    if (btn) {
-      const label = (btn.getAttribute("aria-label") || "").replace(/Google Account[:]?/i, "").trim();
-      name = (label.split(/[\n(]/)[0] || "").trim();
-      const img = btn.querySelector("img");
-      if (img) avatar = img.currentSrc || img.src || "";
-    }
-    if (!avatar) {
-      const img = [...document.querySelectorAll('img[src*="googleusercontent.com"]')]
-        .find((i) => { const w = i.naturalWidth || i.width; return w >= 24 && w <= 256; });
-      if (img) avatar = img.currentSrc || img.src || "";
-    }
-    if (name || avatar) { ipcRenderer.sendToHost("profile", { name, avatar }); return true; }
-    return false;
-  };
-  let tries = 0;
-  const iv = setInterval(() => { if (sendIf() || ++tries > 20) clearInterval(iv); }, 1500);
-}
+// (Google profile auto-detect was removed — it grabbed the wrong account and
+//  photo. The profile name + photo are set manually in Settings instead.)
 
 // ---- reply detection -------------------------------------------------
 function replyWatcher() {
