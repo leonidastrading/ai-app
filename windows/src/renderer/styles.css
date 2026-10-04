@@ -212,3 +212,17 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 #profile img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
 #profile .pf-dot { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(120deg, var(--pink), var(--aqua)); }
 #profile .pf-name { font-size: 14px; color: var(--text); }
+
+/* search results page */
+.search-page { max-width: 820px; margin: 0 auto; padding: 24px 24px 64px; }
+.search-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.search-head h2 { margin: 0; font-size: 20px; }
+.res-sec { margin-top: 22px; }
+.res-sec h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin: 0 0 8px; }
+.res-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
+.res-row:hover { background: var(--bg-elev); }
+.res-row img { width: 22px; height: 22px; border-radius: 50%; }
+.res-row span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.res-row .muted { color: var(--text-dim); font-size: 12px; }
+.res-row .muted:last-child { margin-left: auto; }
+.muted { color: var(--text-dim); }

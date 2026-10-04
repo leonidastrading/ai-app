@@ -9,12 +9,15 @@ const webviews = {};       // id -> <webview>
 const unread = {};         // id -> count
 let recents = [];
 let notifications = [];
+let allKnown = [];         // every provider (built-in + custom), unfiltered
+let hidden = new Set();    // provider ids hidden from the rail
 
 // -------------------------------------------------------------- startup
 async function boot() {
   const state = await window.api.getState();
   recents = state.universalRecents || [];
   notifications = state.notifications || [];
+  allRecents = state.allRecents || [];
   profile = state.profile || {};
   if (state.rbHidden) document.getElementById("app").classList.add("rb-hidden");
   await loadProviders(state);
@@ -33,12 +36,14 @@ async function boot() {
 
 async function loadProviders(state) {
   const all = await window.api.providers();
+  allKnown = all;                                   // full list incl. hidden
+  hidden = new Set(state.hiddenProviders || []);
   const order = state.railOrder || [];
   const byId = Object.fromEntries(all.map((p) => [p.id, p]));
   const ordered = [];
   for (const id of order) if (byId[id]) { ordered.push(byId[id]); delete byId[id]; }
   for (const p of all) if (byId[p.id]) ordered.push(byId[p.id]);
-  providers = ordered;
+  providers = ordered.filter((p) => !hidden.has(p.id));   // rail shows non-hidden
 }
 
 function faviconFor(p) {
@@ -112,13 +117,14 @@ function select(id) {
 function isProvider(id) { return providers.some((p) => p.id === id); }
 
 function showPane(id) {
-  ["pane-universal", "pane-media", "pane-settings", "pane-webviews"].forEach((pid) =>
+  ["pane-universal", "pane-media", "pane-settings", "pane-search", "pane-webviews"].forEach((pid) =>
     document.getElementById(pid).classList.remove("show"));
   Object.values(webviews).forEach((wv) => wv.classList.remove("show"));
 
   if (id === "__universal__") document.getElementById("pane-universal").classList.add("show");
   else if (id === "__media__") { document.getElementById("pane-media").classList.add("show"); loadMedia(); }
   else if (id === "__settings__") document.getElementById("pane-settings").classList.add("show");
+  else if (id === "__search__") document.getElementById("pane-search").classList.add("show");
   else {
     document.getElementById("pane-webviews").classList.add("show");
     if (webviews[id]) webviews[id].classList.add("show");
@@ -126,9 +132,9 @@ function showPane(id) {
 }
 
 // -------------------------------------------------------------- webviews
-function ensureWebview(id) {
+function ensureWebview(id, initialURL) {
   if (webviews[id]) return webviews[id];
-  const p = providers.find((x) => x.id === id);
+  const p = (providers.find((x) => x.id === id)) || (allKnown.find((x) => x.id === id));
   if (!p) return null;
   const wv = document.createElement("webview");
   // One shared, persistent session for all AIs, so a single Google (or other)
@@ -136,7 +142,7 @@ function ensureWebview(id) {
   wv.setAttribute("partition", "persist:uai");
   wv.setAttribute("preload", window.api.webviewPreload);
   wv.setAttribute("allowpopups", "");
-  wv.setAttribute("src", p.home);
+  wv.setAttribute("src", initialURL || p.home);
   wv.dataset.id = id;
   paneWebviews.appendChild(wv);
   webviews[id] = wv;
@@ -164,7 +170,22 @@ function onWebviewMessage(id, e) {
   } else if (e.channel === "profile") {
     const d = e.args[0] || {};
     if (d && (d.name || d.avatar)) setProfile(d);
+  } else if (e.channel === "prompt") {
+    const d = e.args[0] || {};
+    if (d && d.text) addGlobalRecent(id, p ? p.name : "AI", d.text);
   }
+}
+
+// Recent prompts from ALL AIs (and Universal), newest first.
+let allRecents = [];
+function addGlobalRecent(providerId, name, text) {
+  text = String(text).replace(/\s+/g, " ").trim();
+  if (!text) return;
+  if (allRecents[0] && allRecents[0].text === text && allRecents[0].providerId === providerId) return; // dedupe repeats
+  allRecents.unshift({ providerId, name, text, at: Date.now() });
+  allRecents = allRecents.slice(0, 60);
+  window.api.setState({ allRecents });
+  renderRightBar();
 }
 
 // -------------------------------------------------------------- profile
@@ -196,14 +217,18 @@ const PREFILL = {
 };
 
 function deliver(id, text) {
-  const wv = ensureWebview(id);
-  if (!wv) return;
-  // 1) Best: navigate the AI to a URL that carries the prompt.
+  // 1) Best: navigate the AI to a URL that carries the prompt. Create the
+  //    webview straight at that URL when it doesn't exist yet (avoids a
+  //    loadURL-before-ready race that dropped the prompt).
   if (PREFILL[id]) {
     const url = PREFILL[id](text);
-    try { wv.loadURL(url); } catch (e) { wv.setAttribute("src", url); }
+    const existing = webviews[id];
+    if (!existing) { ensureWebview(id, url); }
+    else { try { existing.loadURL(url); } catch (e) { existing.setAttribute("src", url); } }
     return;
   }
+  const wv = ensureWebview(id);
+  if (!wv) return;
   // 2) Otherwise type it into the composer, retrying until it appears, and
   //    copy it so you can paste if the site blocks scripted input.
   try { navigator.clipboard.writeText(text); } catch (e) {}
@@ -278,8 +303,9 @@ document.getElementById("universal-form").addEventListener("submit", async (e) =
   const p = providers.find((x) => x.id === out.provider) || providers[0];
   status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
   addRecent(prompt, p.id);
-  select(p.id);
-  deliver(p.id, prompt);
+  addGlobalRecent(p.id, p.name, prompt);
+  deliver(p.id, prompt);   // create/navigate the webview (at the prompt URL) first
+  select(p.id);            // then reveal it
   document.getElementById("universal-input").value = "";
 });
 
@@ -353,25 +379,22 @@ function renderRecents() {
 const search = document.getElementById("search");
 const searchResults = document.getElementById("search-results");
 let selIdx = 0, results = [];
-search.addEventListener("input", () => renderSearch());
-search.addEventListener("focus", () => renderSearch());
+search.addEventListener("input", renderSearchDropdown);
+search.addEventListener("focus", renderSearchDropdown);
 search.addEventListener("blur", () => setTimeout(() => searchResults.classList.remove("show"), 150));
 search.addEventListener("keydown", (e) => {
-  if (!results.length) return;
-  if (e.key === "ArrowDown") { selIdx = Math.min(selIdx + 1, results.length - 1); markSel(); e.preventDefault(); }
-  else if (e.key === "ArrowUp") { selIdx = Math.max(selIdx - 1, 0); markSel(); e.preventDefault(); }
-  else if (e.key === "Enter") { e.preventDefault(); results[selIdx] && results[selIdx].run(); }
+  if (e.key === "Enter") { e.preventDefault(); const q = search.value.trim(); if (q) openSearchPage(q); searchResults.classList.remove("show"); }
   else if (e.key === "Escape") { searchResults.classList.remove("show"); search.blur(); }
+  else if (results.length && e.key === "ArrowDown") { selIdx = Math.min(selIdx + 1, results.length - 1); markSel(); e.preventDefault(); }
+  else if (results.length && e.key === "ArrowUp") { selIdx = Math.max(selIdx - 1, 0); markSel(); e.preventDefault(); }
 });
-function renderSearch() {
-  const q = search.value.trim();
+function renderSearchDropdown() {
+  const q = search.value.trim().toLowerCase();
   results = [];
   if (q) {
-    for (const p of providers) {
-      if (p.name.toLowerCase().includes(q.toLowerCase()))
-        results.push({ label: p.name, ai: "Open", run: () => { select(p.id); closeSearch(); } });
-    }
-    results.push({ label: `Ask Universal AI: “${q}”`, ai: "Route", run: () => { select("__universal__"); document.getElementById("universal-input").value = q; closeSearch(); document.getElementById("universal-form").requestSubmit(); } });
+    for (const p of providers) if (p.name.toLowerCase().includes(q))
+      results.push({ label: p.name, ai: "Open", run: () => { select(p.id); search.blur(); searchResults.classList.remove("show"); } });
+    results.push({ label: `See all results for “${search.value.trim()}”`, ai: "Search", run: () => openSearchPage(search.value.trim()) });
   }
   selIdx = 0;
   searchResults.innerHTML = results.map((r, i) =>
@@ -380,7 +403,33 @@ function renderSearch() {
   searchResults.classList.toggle("show", results.length > 0);
 }
 function markSel() { searchResults.querySelectorAll(".sr-item").forEach((el, i) => el.classList.toggle("sel", i === selIdx)); }
-function closeSearch() { search.value = ""; searchResults.classList.remove("show"); search.blur(); }
+
+// A dedicated results page: AIs, your recent prompts across all AIs, and media.
+async function openSearchPage(q) {
+  searchResults.classList.remove("show");
+  select("__search__");
+  const page = document.getElementById("search-page");
+  const ql = q.toLowerCase();
+  const ais = allKnown.filter((p) => `${p.name} ${p.maker || ""} ${p.strengths || ""}`.toLowerCase().includes(ql));
+  const recentMatches = allRecents.filter((r) => r.text.toLowerCase().includes(ql)).slice(0, 40);
+  let mediaMatches = [];
+  try { mediaMatches = (await window.api.listMedia()).filter((m) => m.name.toLowerCase().includes(ql)).slice(0, 40); } catch (e) {}
+
+  const sec = (title, inner) => inner ? `<div class="res-sec"><h3>${title}</h3>${inner}</div>` : "";
+  const aiHtml = ais.map((p) => `<div class="res-row" data-kind="ai" data-id="${p.id}"><img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span><span class="muted">${escapeHtml(p.maker || "")}</span></div>`).join("");
+  const recHtml = recentMatches.map((r, i) => `<div class="res-row" data-kind="recent" data-i="${i}"><span class="muted" style="min-width:72px">${escapeHtml(r.name || "AI")}</span><span>${escapeHtml(r.text)}</span></div>`).join("");
+  const medHtml = mediaMatches.map((m) => `<div class="res-row" data-kind="media" data-path="${escapeAttr(m.path)}"><span>${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.folder)}</span></div>`).join("");
+
+  page.innerHTML = `<div class="search-head"><h2>Results for “${escapeHtml(q)}”</h2><button id="route-this" class="primary">Ask Universal AI</button></div>` +
+    ((ais.length || recentMatches.length || mediaMatches.length)
+      ? sec("AIs", aiHtml) + sec("Recent prompts", recHtml) + sec("Media", medHtml)
+      : `<p class="rb-empty">No matches here. Try “Ask Universal AI” to send it to the best AI.</p>`);
+  page._recent = recentMatches;
+  document.getElementById("route-this").onclick = () => { select("__universal__"); const t = document.getElementById("universal-input"); t.value = q; document.getElementById("universal-form").requestSubmit(); };
+  page.querySelectorAll('.res-row[data-kind="ai"]').forEach((el) => el.onclick = () => select(el.dataset.id));
+  page.querySelectorAll('.res-row[data-kind="recent"]').forEach((el) => el.onclick = () => { const r = page._recent[+el.dataset.i]; if (r && r.providerId && !hidden.has(r.providerId)) select(r.providerId); });
+  page.querySelectorAll('.res-row[data-kind="media"]').forEach((el) => el.onclick = () => window.api.openMediaFile(el.dataset.path));
+}
 
 // -------------------------------------------------------------- media
 let mediaTab = "all";
@@ -484,16 +533,36 @@ window.api.onUpdateStatus(({ status, info }) => {
 });
 function buildSettingsProviders() {
   const box = document.getElementById("settings-providers");
-  box.innerHTML = providers.map((p) =>
-    `<div class="sp-row"><img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span>` +
-    (p.custom ? `<a href="#" class="sp-remove" data-id="${p.id}">Remove</a>` : "") + `</div>`).join("");
+  // List every AI. Custom ones can be removed; built-in ones can be hidden
+  // from the rail (and shown again).
+  box.innerHTML = allKnown.map((p) => {
+    const isHidden = hidden.has(p.id);
+    const action = p.custom
+      ? `<a href="#" class="sp-remove" data-id="${p.id}">Remove</a>`
+      : `<a href="#" class="sp-toggle" data-id="${p.id}">${isHidden ? "Show" : "Hide"}</a>`;
+    return `<div class="sp-row" style="${isHidden ? "opacity:.5" : ""}">
+      <img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span>${action}</div>`;
+  }).join("");
+
+  const refresh = async () => { await loadProviders(await window.api.getState()); buildRail(); buildSettingsProviders(); };
   box.querySelectorAll(".sp-remove").forEach((a) => a.onclick = async (e) => {
     e.preventDefault();
+    if (!confirm("Remove this AI?")) return;
     await window.api.removeCustomAI(a.dataset.id);
     if (webviews[a.dataset.id]) { webviews[a.dataset.id].remove(); delete webviews[a.dataset.id]; }
-    await loadProviders(await window.api.getState());
-    buildRail(); buildSettingsProviders();
-    if (current === a.dataset.id) select("__universal__");
+    const wasCurrent = current === a.dataset.id;
+    await refresh();
+    if (wasCurrent) select("__universal__");
+  });
+  box.querySelectorAll(".sp-toggle").forEach((a) => a.onclick = async (e) => {
+    e.preventDefault();
+    const id = a.dataset.id;
+    if (hidden.has(id)) hidden.delete(id); else hidden.add(id);
+    await window.api.setState({ hiddenProviders: [...hidden] });
+    if (hidden.has(id) && webviews[id]) { webviews[id].remove(); delete webviews[id]; }
+    const wasCurrent = current === id;
+    await refresh();
+    if (wasCurrent && hidden.has(id)) select("__universal__");
   });
 }
 
@@ -557,32 +626,18 @@ function renderRightBar() {
     : `<div class="rb-empty">No replies yet. When an AI answers, it shows up here.</div>`;
   nl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => { const n = notifications[+el.dataset.i]; if (n) select(n.providerId); });
 
-  // Suggestions: things you can ask. Click one to drop it into Universal AI.
+  // Recent: prompts you've sent across all the AIs. Click to reopen that AI.
   const sl = document.getElementById("rb-sugg-list");
-  sl.innerHTML = SUGGESTIONS.map((s, i) => `<div class="rb-item" data-i="${i}"><div class="rb-body">${escapeHtml(s)}</div></div>`).join("");
+  sl.innerHTML = allRecents.length
+    ? allRecents.slice(0, 40).map((r, i) => `<div class="rb-item" data-i="${i}">
+        <div class="rb-title"><span>${escapeHtml(r.name || "AI")}</span><span class="rb-time">${timeAgo(r.at)}</span></div>
+        <div class="rb-body">${escapeHtml(r.text)}</div></div>`).join("")
+    : `<div class="rb-empty">Prompts you send in any AI show up here.</div>`;
   sl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
-    const s = SUGGESTIONS[+el.dataset.i]; if (!s) return;
-    select("__universal__");
-    const t = document.getElementById("universal-input");
-    t.value = s; t.focus();
+    const r = allRecents[+el.dataset.i]; if (!r) return;
+    if (r.providerId && !hidden.has(r.providerId)) select(r.providerId);
   });
 }
-// A rotating set of starter prompts (shuffled per launch so it feels fresh).
-const SUGGESTION_POOL = [
-  "Summarize this article: (paste a link)",
-  "Write a Python script to rename files in a folder",
-  "Generate an image of a city skyline at night",
-  "Explain this error and how to fix it: (paste it)",
-  "Draft a polite follow-up email to a client",
-  "What's the latest news on (topic)?",
-  "Build a simple landing page for my product",
-  "Solve this step by step: (paste a math problem)",
-  "Turn these notes into a clear summary",
-  "Compare two options and recommend one",
-  "Write unit tests for this function",
-  "Plan a 3-day trip to (place)",
-];
-const SUGGESTIONS = SUGGESTION_POOL.slice().sort(() => Math.random() - 0.5).slice(0, 8);
 document.getElementById("rb-clear").onclick = () => { notifications = []; window.api.setState({ notifications }); renderRightBar(); };
 document.getElementById("btn-rightbar").onclick = () => {
   const app = document.getElementById("app");

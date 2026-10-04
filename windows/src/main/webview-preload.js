@@ -11,6 +11,27 @@ function start() {
   autofocus();
   noAutocorrect();
   profileScrape();
+  captureSends();
+}
+
+// Report prompts you send in any AI, so UAI can list recent prompts across
+// all of them. Captured on Enter (before the box clears) and on send clicks.
+function captureSends() {
+  const textOf = (el) => (el ? (el.value || el.innerText || "").trim() : "");
+  const isBox = (el) => el && (el.tagName === "TEXTAREA" || el.isContentEditable || (el.getAttribute && el.getAttribute("role") === "textbox"));
+  const report = (text) => { if (text && text.length <= 2000) ipcRenderer.sendToHost("prompt", { text }); };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && isBox(document.activeElement)) report(textOf(document.activeElement));
+  }, true);
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest('button,[role="button"]');
+    if (!btn) return;
+    const label = ((btn.getAttribute("aria-label") || "") + " " + (btn.title || "") + " " + (btn.textContent || "")).toLowerCase();
+    if (/\bsend\b|submit/.test(label)) {
+      const box = [...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].find((b) => textOf(b));
+      report(textOf(box));
+    }
+  }, true);
 }
 
 // On Google pages (Gemini signs you in with Google), read the account name and
