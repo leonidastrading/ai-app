@@ -75,6 +75,10 @@ final class WebViewStore: NSObject, ObservableObject {
             source: Self.acceptCookiesScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         config.userContentController.addUserScript(WKUserScript(
             source: Self.mediaCaptureScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // Turn off autocorrect suggestions in the AIs' own text boxes, keeping
+        // spellcheck (the red underline) on. Runs in every frame.
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.noAutocorrectScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -437,6 +441,38 @@ extension WebViewStore {
       };
       setInterval(consider, 2500);
       setTimeout(consider, 1200);
+    })();
+    """
+
+    /// Sets autocorrect="off" (WebKit honors it) on every editable field so
+    /// the OS stops popping word suggestions, while leaving spellcheck on.
+    static let noAutocorrectScript = """
+    (() => {
+      if (window.__uaiNoAutocorrect) return;
+      window.__uaiNoAutocorrect = true;
+      const fix = (el) => {
+        if (!el || !el.setAttribute) return;
+        const tag = el.tagName, editable = el.isContentEditable;
+        if (tag === 'TEXTAREA' || editable || (tag === 'INPUT' &&
+            /^(text|search|email|url|)$/i.test(el.getAttribute('type') || ''))) {
+          el.setAttribute('autocorrect', 'off');
+          el.setAttribute('autocapitalize', 'off');
+          if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'true');
+        }
+      };
+      const scan = (root) => {
+        try { root.querySelectorAll('textarea, input, [contenteditable]').forEach(fix); } catch (e) {}
+      };
+      const start = () => {
+        scan(document);
+        new MutationObserver((muts) => {
+          for (const m of muts) for (const n of m.addedNodes) {
+            if (n.nodeType === 1) { fix(n); scan(n); }
+          }
+        }).observe(document.documentElement, { childList: true, subtree: true });
+      };
+      if (document.documentElement) start();
+      else document.addEventListener('DOMContentLoaded', start);
     })();
     """
 
