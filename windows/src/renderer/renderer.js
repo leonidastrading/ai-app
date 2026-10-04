@@ -11,6 +11,7 @@ let recents = [];
 let notifications = [];
 let allKnown = [];         // every provider (built-in + custom), unfiltered
 let hidden = new Set();    // provider ids hidden from the rail
+let memory = [];           // user's reusable notes
 
 // -------------------------------------------------------------- startup
 async function boot() {
@@ -18,6 +19,7 @@ async function boot() {
   recents = state.universalRecents || [];
   notifications = state.notifications || [];
   allRecents = state.allRecents || [];
+  memory = state.memory || [];
   profile = state.profile || {};
   if (state.rbHidden) document.getElementById("app").classList.add("rb-hidden");
   await loadProviders(state);
@@ -102,6 +104,7 @@ function select(id) {
   // panes
   showPane(id);
   document.getElementById("btn-media").classList.toggle("active", id === "__media__");
+  document.getElementById("btn-memory").classList.toggle("active", id === "__memory__");
   document.getElementById("btn-settings").classList.toggle("active", id === "__settings__");
 
   if (isProvider(id)) {
@@ -117,12 +120,13 @@ function select(id) {
 function isProvider(id) { return providers.some((p) => p.id === id); }
 
 function showPane(id) {
-  ["pane-universal", "pane-media", "pane-settings", "pane-search", "pane-webviews"].forEach((pid) =>
+  ["pane-universal", "pane-media", "pane-memory", "pane-settings", "pane-search", "pane-webviews"].forEach((pid) =>
     document.getElementById(pid).classList.remove("show"));
   Object.values(webviews).forEach((wv) => wv.classList.remove("show"));
 
   if (id === "__universal__") document.getElementById("pane-universal").classList.add("show");
   else if (id === "__media__") { document.getElementById("pane-media").classList.add("show"); loadMedia(); }
+  else if (id === "__memory__") { document.getElementById("pane-memory").classList.add("show"); renderMemory(); }
   else if (id === "__settings__") document.getElementById("pane-settings").classList.add("show");
   else if (id === "__search__") document.getElementById("pane-search").classList.add("show");
   else {
@@ -306,7 +310,14 @@ async function runUniversal() {
   input.value = "";
 }
 document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
-document.getElementById("universal-send").addEventListener("click", (e) => { e.preventDefault(); runUniversal(); });
+// Enter sends (Shift+Enter = new line). Document-level capture so it fires no
+// matter how the textarea itself handles the key.
+document.addEventListener("keydown", (e) => {
+  if (e.target && e.target.id === "universal-input" && e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    runUniversal();
+  }
+}, true);
 
 // Offline keyword router — lets Universal work before an API key is added.
 const HEURISTICS = [
@@ -329,15 +340,6 @@ function localRoute(prompt) {
   }
   return { provider: best ? best.id : "claude", reason: "best match", local: true };
 }
-
-// Enter sends the prompt; Shift+Enter makes a new line.
-document.getElementById("universal-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    e.stopPropagation();
-    runUniversal();
-  }
-});
 
 // A short chime for replies — works even when Windows mutes toast sounds.
 let audioCtx = null;
@@ -470,6 +472,27 @@ function tileHtml(m) {
 }
 document.getElementById("btn-media").onclick = () => select("__media__");
 document.getElementById("media-folder").onclick = () => window.api.openMediaFolder();
+
+// -------------------------------------------------------------- memory
+document.getElementById("btn-memory").onclick = () => select("__memory__");
+function renderMemory() {
+  const list = document.getElementById("memory-list");
+  list.innerHTML = memory.length
+    ? memory.map((m, i) => `<div class="mem-row"><span>${escapeHtml(m)}</span><a href="#" class="mem-copy" data-i="${i}">Copy</a><a href="#" class="mem-del" data-i="${i}">Remove</a></div>`).join("")
+    : `<p class="rb-empty">Nothing yet. Add a note above to reuse across your AIs.</p>`;
+  list.querySelectorAll(".mem-copy").forEach((a) => a.onclick = (e) => { e.preventDefault(); try { navigator.clipboard.writeText(memory[+a.dataset.i]); } catch (x) {} a.textContent = "Copied"; setTimeout(() => a.textContent = "Copy", 1200); });
+  list.querySelectorAll(".mem-del").forEach((a) => a.onclick = (e) => { e.preventDefault(); memory.splice(+a.dataset.i, 1); window.api.setState({ memory }); renderMemory(); });
+}
+function addMemory() {
+  const inp = document.getElementById("memory-input");
+  const v = inp.value.trim();
+  if (!v) return;
+  memory.unshift(v); inp.value = "";
+  window.api.setState({ memory });
+  renderMemory();
+}
+document.getElementById("memory-add").onclick = addMemory;
+document.getElementById("memory-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addMemory(); } });
 document.getElementById("media-clear").onclick = async () => {
   if (confirm("Move all files in your UAI Media folder to the Recycle Bin?")) { await window.api.clearMedia(); loadMedia(); }
 };

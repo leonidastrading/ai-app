@@ -33,6 +33,7 @@
         </div>
         <div class="top-actions">
           <button id="btn-media" title="Media">🖼 Media</button>
+          <button id="btn-memory" title="Memory">🧠 Memory</button>
           <button id="btn-settings" title="Settings">⚙</button>
           <button id="btn-rightbar" title="Show/hide the activity panel">⇥</button>
         </div>
@@ -108,6 +109,19 @@
               <h3>About</h3>
               <p class="hint">UAI for Windows — all your AI assistants in one window, signed in with your own accounts. <span id="about-version"></span></p>
             </section>
+          </div>
+        </div>
+
+        <!-- Memory page -->
+        <div class="pane" id="pane-memory">
+          <div class="memory-inner">
+            <h2>Memory</h2>
+            <p class="hint">Notes you want to reuse across your AIs — preferences, facts about you, context. Stored on this PC. Click one to copy it, then paste it into any AI.</p>
+            <div class="row">
+              <input id="memory-input" placeholder="e.g. I prefer concise answers; I code in Python" />
+              <button id="memory-add" class="primary">Add</button>
+            </div>
+            <div id="memory-list"></div>
           </div>
         </div>
 

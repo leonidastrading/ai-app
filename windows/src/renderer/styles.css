@@ -226,3 +226,13 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 .res-row .muted { color: var(--text-dim); font-size: 12px; }
 .res-row .muted:last-child { margin-left: auto; }
 .muted { color: var(--text-dim); }
+
+/* memory page */
+.memory-inner { max-width: 760px; margin: 0 auto; padding: 28px 24px; }
+.memory-inner h2 { margin-top: 0; }
+.memory-inner .row { display: flex; gap: 8px; margin: 12px 0; }
+.memory-inner input { flex: 1; height: 36px; padding: 0 12px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); color: var(--text); }
+.mem-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg-elev); margin-bottom: 8px; }
+.mem-row span { flex: 1; }
+.mem-row a { font-size: 12px; color: var(--aqua); }
+.mem-row .mem-del { color: var(--pink); }
