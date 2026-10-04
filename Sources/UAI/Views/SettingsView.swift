@@ -76,7 +76,10 @@ private struct ServicesSettings: View {
     var body: some View {
         Form {
             Section {
-                ForEach(registry.all) { ProviderSettingsRow(provider: $0) }
+                ForEach(registry.all) { ProviderSettingsRow(provider: $0, registry: registry) }
+            } header: {
+                Text("Use the arrows to reorder the rail, or drag the icons in the sidebar.")
+                    .font(.caption).foregroundStyle(.secondary)
             } footer: {
                 Text("Each AI runs its own website inside UAI, signed in with your account, so chats stay in sync with its other apps. Change the address if a service moves.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -88,17 +91,27 @@ private struct ServicesSettings: View {
 
 private struct ProviderSettingsRow: View {
     let provider: Provider
+    @ObservedObject var registry: ProviderRegistry
     @AppStorage private var enabled: Bool
     @AppStorage private var url: String
 
-    init(provider: Provider) {
+    init(provider: Provider, registry: ProviderRegistry) {
         self.provider = provider
+        self.registry = registry
         _enabled = AppStorage(wrappedValue: true, SettingsKey.enabled(provider.id))
         _url = AppStorage(wrappedValue: "", SettingsKey.homeURL(provider.id))
     }
 
     var body: some View {
         HStack(spacing: 10) {
+            VStack(spacing: 1) {
+                Button { registry.move(provider.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(registry.isFirst(provider.id)).help("Move up")
+                Button { registry.move(provider.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(registry.isLast(provider.id)).help("Move down")
+            }
+            .buttonStyle(.borderless).font(.caption)
+
             Toggle("", isOn: $enabled).labelsHidden()
             ProviderIcon(provider: provider, size: 22)
             Text(provider.name).frame(width: 80, alignment: .leading)

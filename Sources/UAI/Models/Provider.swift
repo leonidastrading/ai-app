@@ -186,6 +186,14 @@ final class ProviderRegistry: ObservableObject {
     private init() {
         custom = JSONFile.load([CustomProvider].self, from: Self.file) ?? []
         order = UserDefaults.standard.stringArray(forKey: Self.orderKey) ?? []
+        // One-time cleanup: drop the old auto-scraped Muse icon (a random page
+        // image) so Muse shows its normal site icon again.
+        if !UserDefaults.standard.bool(forKey: "muse.iconReset.v1") {
+            if (UserDefaults.standard.stringArray(forKey: "icon.auto") ?? []).contains("muse") {
+                resetCustomIcon(.muse)
+            }
+            UserDefaults.standard.set(true, forKey: "muse.iconReset.v1")
+        }
     }
 
     /// All AIs in rail order. AIs not yet placed (new built-ins, new

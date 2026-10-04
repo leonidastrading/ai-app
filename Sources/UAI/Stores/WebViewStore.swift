@@ -858,9 +858,9 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
             firstLoaded.insert(id)
             applyZoom(id)
             if id == .gemini, !Self.isSignInURL(webView.url) { onGeminiReady?() }
-            if id == .muse, !Self.isSignInURL(webView.url), ProviderRegistry.shared.customIconURL(.muse) == nil {
-                captureSiteAvatar(for: .muse)
-            }
+            // (Muse icon auto-capture removed — it grabbed random page images.
+            //  Muse uses its normal site icon by default; set your own via
+            //  right-click → Set Icon… if you want.)
         }
         focusComposer(in: webView)
         if let id = provider(of: webView) {
