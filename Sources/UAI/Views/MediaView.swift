@@ -4,12 +4,31 @@ import SwiftUI
 /// Every file your AIs generated: pictures, videos, reports…
 struct MediaView: View {
     @EnvironmentObject private var media: MediaLibrary
-    @State private var kind: MediaItem.Kind?
+    enum Tab: String, CaseIterable, Identifiable {
+        case all = "All", images = "Images", videos = "Videos", documents = "Documents"
+        case other = "Other", screenshots = "Screenshots"
+        var id: String { rawValue }
+        var kind: MediaItem.Kind? {
+            switch self {
+            case .images: .image; case .videos: .video; case .documents: .document; case .other: .other
+            default: nil
+            }
+        }
+    }
+
+    @State private var tab: Tab = .all
     @State private var provider: ProviderID?
     @State private var confirmClear = false
 
     private var filtered: [MediaItem] {
-        media.items.filter { (kind == nil || $0.kind == kind) && (provider == nil || $0.provider == provider) }
+        media.items.filter { item in
+            if tab == .screenshots { guard item.isScreenshot else { return false } }
+            else {
+                if item.isScreenshot { return false }   // screenshots only in their own tab
+                if let k = tab.kind, item.kind != k { return false }
+            }
+            return provider == nil || item.provider == provider
+        }
     }
 
     var body: some View {
@@ -42,9 +61,8 @@ struct MediaView: View {
                 Text("\(media.items.count) files saved from your AIs").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Picker("Type", selection: $kind) {
-                Text("All").tag(MediaItem.Kind?.none)
-                ForEach(MediaItem.Kind.allCases) { Label($0.rawValue, systemImage: $0.symbol).tag(Optional($0)) }
+            Picker("Type", selection: $tab) {
+                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()

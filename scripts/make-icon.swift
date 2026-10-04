@@ -39,12 +39,44 @@ func render(_ px: Int) -> Data {
     stripe.stroke()
     NSGraphicsContext.restoreGraphicsState()
 
-    let text = NSAttributedString(string: "UAI", attributes: [
-        .font: NSFont.systemFont(ofSize: rect.width * 0.30, weight: .heavy),
-        .foregroundColor: NSColor.white,
-    ])
-    let ts = text.size()
-    text.draw(at: NSPoint(x: rect.midX - ts.width / 2, y: rect.midY - ts.height / 2))
+    // A spiral galaxy in the middle, matching the Universal AI icon.
+    NSGraphicsContext.saveGraphicsState()
+    tile.addClip()
+    let center = NSPoint(x: rect.midX, y: rect.midY)
+    let radius = rect.width * 0.34
+    func seeded(_ i: Int) -> CGFloat {
+        let v = sin(Double(i) * 12.9898) * 43758.5453
+        return CGFloat(v - floor(v))
+    }
+    // Bright core glow.
+    NSGradient(colors: [NSColor.white, pink.withAlphaComponent(0.6), NSColor.clear])!
+        .draw(in: NSBezierPath(ovalIn: NSRect(x: center.x - radius * 0.4, y: center.y - radius * 0.4,
+                                              width: radius * 0.8, height: radius * 0.8)),
+              relativeCenterPosition: .zero)
+    // Two spiral arms of glowing dots, pink and aqua.
+    for (offset, color) in [(0.0, pink), (Double.pi, aqua)] {
+        for i in 0..<70 {
+            let t = Double(i) / 70
+            let angle = offset + t * 3.4 * Double.pi
+            let r = radius * (0.12 + 0.88 * CGFloat(t))
+            let jitter = (seeded(i + Int(offset * 100)) - 0.5) * radius * 0.10
+            let x = center.x + CGFloat(cos(angle)) * (r + jitter)
+            let y = center.y + CGFloat(sin(angle)) * (r + jitter) * 0.82
+            let dot = radius * (0.09 - 0.055 * CGFloat(t))
+            let shade = t < 0.25 ? NSColor.white : color
+            shade.withAlphaComponent(0.95 - 0.5 * CGFloat(t)).setFill()
+            NSBezierPath(ovalIn: NSRect(x: x - dot / 2, y: y - dot / 2, width: dot, height: dot)).fill()
+        }
+    }
+    // A few background stars.
+    for i in 0..<18 {
+        let x = rect.minX + seeded(i * 7) * rect.width
+        let y = rect.minY + seeded(i * 13) * rect.height
+        let s = size * 0.006 + seeded(i) * size * 0.01
+        NSColor.white.withAlphaComponent(0.35 + seeded(i * 3) * 0.4).setFill()
+        NSBezierPath(ovalIn: NSRect(x: x, y: y, width: s, height: s)).fill()
+    }
+    NSGraphicsContext.restoreGraphicsState()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

@@ -23,6 +23,7 @@ struct MediaItem: Identifiable, Hashable {
     let kind: Kind
     let created: Date
     let size: Int64
+    var isScreenshot = false
 
     var name: String { url.lastPathComponent }
 }
@@ -44,13 +45,15 @@ final class MediaLibrary: ObservableObject {
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true else { continue }
             let folder = url.deletingLastPathComponent().lastPathComponent
+            let isScreenshot = folder == "Screenshots"
             let provider = Provider.all.first { $0.name == folder }?.id
             found.append(MediaItem(
                 url: url,
                 provider: provider,
                 kind: Self.kind(of: values.contentType ?? UTType(filenameExtension: url.pathExtension)),
                 created: values.creationDate ?? .distantPast,
-                size: Int64(values.fileSize ?? 0)))
+                size: Int64(values.fileSize ?? 0),
+                isScreenshot: isScreenshot))
         }
         items = found.sorted { $0.created > $1.created }
     }

@@ -13,6 +13,12 @@ enum Paths {
         return ensure(base.appendingPathComponent("UAI Media", isDirectory: true))
     }
 
+    /// Screenshots and other images you shared into a chat, kept apart from
+    /// the AIs' own generated media.
+    static var screenshots: URL {
+        ensure(media.appendingPathComponent("Screenshots", isDirectory: true))
+    }
+
     static func mediaFolder(for provider: ProviderID) -> URL {
         ensure(media.appendingPathComponent(Provider.get(provider).name, isDirectory: true))
     }

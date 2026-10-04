@@ -416,8 +416,22 @@ extension WebViewStore {
       window.__uaiMedia = true;
       const seen = new Set();
       const skip = /avatar|favicon|logo|icon|emoji|profile|sprite|thumb_small|spinner|badge/i;
-      const send = (url, name, dataURL) =>
-        window.webkit.messageHandlers.uai.postMessage({ type: 'media', url, name, dataURL });
+      const send = (url, name, dataURL, role) =>
+        window.webkit.messageHandlers.uai.postMessage({ type: 'media', url, name, dataURL, role });
+
+      // Is this image in one of YOUR messages (a screenshot/upload) or in the
+      // AI's reply (generated)? Best-effort across sites; defaults to generated.
+      const roleOf = (el) => {
+        for (let n = el, i = 0; n && i < 14; n = n.parentElement, i++) {
+          const r = (n.getAttribute && (n.getAttribute('data-message-author-role') || '')).toLowerCase();
+          if (r === 'user') return 'user';
+          if (r === 'assistant' || r === 'model') return 'assistant';
+          const cls = (n.className && typeof n.className === 'string') ? n.className.toLowerCase() : '';
+          if (/user-query|from-user|human-turn|user-message|query-content|request-/.test(cls)) return 'user';
+          if (/assistant|model-response|agent-|response-|markdown/.test(cls)) return 'assistant';
+        }
+        return 'assistant';
+      };
 
       // Draw a loaded <img> onto a canvas and read its PNG bytes. Works for
       // cross-origin images only when the server allows it; otherwise throws.
@@ -430,7 +444,7 @@ extension WebViewStore {
         } catch (e) { return null; }
       };
 
-      const grab = async (img, src, name) => {
+      const grab = async (img, src, name, role) => {
         // 1) A fresh CORS-anonymous image usually lets us read Google/OpenAI CDN pixels.
         const clone = new Image();
         clone.crossOrigin = 'anonymous';
@@ -459,7 +473,7 @@ extension WebViewStore {
           }
         }
         // 3) Last resort: hand the app the URL to download with your cookies.
-        send(src, name, dataURL || undefined);
+        send(src, name, dataURL || undefined, role);
       };
 
       // Only capture media that appears AFTER the page settles — i.e. things
@@ -471,12 +485,13 @@ extension WebViewStore {
         if (!src || seen.has(src) || skip.test(src)) return;
         if (/^data:image\\/(gif|svg)/.test(src)) return;
         const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-        if (w < 320 || h < 320) return;
+        if (w < 256 || h < 256) return;
         seen.add(src);
         if (!armed) return;           // pre-existing content: remember, don't save
         const name = (img.getAttribute('alt') || '').slice(0, 60);
-        if (src.startsWith('data:image')) { send(src, name, src); return; }  // already have the bytes
-        grab(img, src, name);
+        const role = roleOf(img);
+        if (src.startsWith('data:image')) { send(src, name, src, role); return; }  // already have the bytes
+        grab(img, src, name, role);
       };
       const tryVideo = (v) => {
         const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
@@ -658,7 +673,10 @@ extension WebViewStore: WKScriptMessageHandler {
         if capturedURLs.count > 4000 { capturedURLs = Set(capturedURLs.suffix(2000)) }
         UserDefaults.standard.set(Array(capturedURLs), forKey: Self.capturedKey)
 
-        let folder = Paths.mediaFolder(for: id)
+        // Images that appear in YOUR messages (uploaded screenshots, pastes)
+        // go to a separate Screenshots folder, not mixed with generated media.
+        let isScreenshot = body["role"] as? String == "user"
+        let folder = isScreenshot ? Paths.screenshots : Paths.mediaFolder(for: id)
         let suggested = body["name"] as? String ?? ""
 
         if let dataURL = body["dataURL"] as? String,
