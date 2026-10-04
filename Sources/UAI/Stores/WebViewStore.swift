@@ -513,6 +513,34 @@ extension WebViewStore {
         }
       };
       window.__uaiScanMedia = () => { armed = true; watch(document); };
+
+      // Screenshots / images YOU attach are captured the moment you add them —
+      // from paste, drag-and-drop, or the file picker — at full resolution and
+      // with the real bytes, so they reliably land in the Screenshots tab even
+      // when the site only renders a tiny CORS-locked thumbnail.
+      const sawFile = (file) => {
+        if (!file || !/^image\\//.test(file.type || '')) return;
+        const key = 'upload:' + (file.name || 'screenshot') + ':' + file.size;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const fr = new FileReader();
+        fr.onload = () => send(key, file.name || 'screenshot', fr.result, 'user');
+        fr.readAsDataURL(file);
+      };
+      document.addEventListener('paste', (e) => {
+        const items = (e.clipboardData || {}).items || [];
+        for (const it of items) if (it.kind === 'file') sawFile(it.getAsFile());
+      }, true);
+      document.addEventListener('drop', (e) => {
+        const files = ((e.dataTransfer || {}).files) || [];
+        for (const f of files) sawFile(f);
+      }, true);
+      document.addEventListener('change', (e) => {
+        const t = e.target;
+        if (t && t.tagName === 'INPUT' && (t.type || '').toLowerCase() === 'file' && t.files) {
+          for (const f of t.files) sawFile(f);
+        }
+      }, true);
       const start = () => {
         watch(document);            // mark everything currently on the page as seen
         // Watch for new media, but coalesce bursts of DOM changes into one

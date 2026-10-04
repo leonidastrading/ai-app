@@ -17,64 +17,72 @@ func render(_ px: Int) -> Data {
     let rect = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
     let tile = NSBezierPath(roundedRect: rect, xRadius: rect.width * 0.225, yRadius: rect.width * 0.225)
 
-    // Colorway: indigo -> violet -> pink -> aqua, like the shoe's midsole.
+    // Colorway: indigo / violet / pink / aqua, like the shoe's midsole, but
+    // kept deep so the galaxy reads as the star of the icon.
     let indigo = NSColor(red: 0.27, green: 0.29, blue: 0.78, alpha: 1)
     let violet = NSColor(red: 0.47, green: 0.38, blue: 0.86, alpha: 1)
-    let pink = NSColor(red: 0.95, green: 0.40, blue: 0.62, alpha: 1)
-    let aqua = NSColor(red: 0.45, green: 0.74, blue: 0.80, alpha: 1)
-    NSGradient(colors: [indigo, violet, pink, aqua])!.draw(in: tile, angle: -60)
+    let pink = NSColor(red: 0.98, green: 0.45, blue: 0.68, alpha: 1)
+    let aqua = NSColor(red: 0.50, green: 0.82, blue: 0.88, alpha: 1)
 
-    // Diagonal knit stripes across the top half.
-    NSGraphicsContext.saveGraphicsState()
-    tile.addClip()
-    NSColor.white.withAlphaComponent(0.12).setStroke()
-    let stripe = NSBezierPath()
-    stripe.lineWidth = max(1, size * 0.012)
-    var x = rect.minX - rect.height
-    while x < rect.maxX {
-        stripe.move(to: NSPoint(x: x, y: rect.midY))
-        stripe.line(to: NSPoint(x: x + rect.height * 0.5, y: rect.maxY))
-        x += size * 0.035
-    }
-    stripe.stroke()
-    NSGraphicsContext.restoreGraphicsState()
+    // Dark space background: a deep indigo corner fading to near-black, so the
+    // bright galaxy pops instead of getting washed out by a loud gradient.
+    let deepIndigo = NSColor(red: 0.16, green: 0.13, blue: 0.40, alpha: 1)
+    let space = NSColor(red: 0.04, green: 0.03, blue: 0.10, alpha: 1)
+    NSGradient(colors: [deepIndigo, space])!.draw(in: tile, angle: -60)
 
-    // A spiral galaxy in the middle, matching the Universal AI icon.
     NSGraphicsContext.saveGraphicsState()
     tile.addClip()
     let center = NSPoint(x: rect.midX, y: rect.midY)
-    let radius = rect.width * 0.34
+    // The galaxy now fills most of the tile instead of being a speck.
+    let radius = rect.width * 0.60
     func seeded(_ i: Int) -> CGFloat {
         let v = sin(Double(i) * 12.9898) * 43758.5453
         return CGFloat(v - floor(v))
     }
-    // Bright core glow.
-    NSGradient(colors: [NSColor.white, pink.withAlphaComponent(0.6), NSColor.clear])!
-        .draw(in: NSBezierPath(ovalIn: NSRect(x: center.x - radius * 0.4, y: center.y - radius * 0.4,
-                                              width: radius * 0.8, height: radius * 0.8)),
-              relativeCenterPosition: .zero)
-    // Two spiral arms of glowing dots, pink and aqua.
-    for (offset, color) in [(0.0, pink), (Double.pi, aqua)] {
-        for i in 0..<70 {
-            let t = Double(i) / 70
-            let angle = offset + t * 3.4 * Double.pi
-            let r = radius * (0.12 + 0.88 * CGFloat(t))
-            let jitter = (seeded(i + Int(offset * 100)) - 0.5) * radius * 0.10
-            let x = center.x + CGFloat(cos(angle)) * (r + jitter)
-            let y = center.y + CGFloat(sin(angle)) * (r + jitter) * 0.82
-            let dot = radius * (0.09 - 0.055 * CGFloat(t))
-            let shade = t < 0.25 ? NSColor.white : color
-            shade.withAlphaComponent(0.95 - 0.5 * CGFloat(t)).setFill()
-            NSBezierPath(ovalIn: NSRect(x: x - dot / 2, y: y - dot / 2, width: dot, height: dot)).fill()
-        }
-    }
-    // A few background stars.
-    for i in 0..<18 {
+
+    // Scattered background stars across the whole tile.
+    for i in 0..<60 {
         let x = rect.minX + seeded(i * 7) * rect.width
         let y = rect.minY + seeded(i * 13) * rect.height
-        let s = size * 0.006 + seeded(i) * size * 0.01
-        NSColor.white.withAlphaComponent(0.35 + seeded(i * 3) * 0.4).setFill()
+        let s = size * 0.004 + seeded(i) * size * 0.012
+        NSColor.white.withAlphaComponent(0.25 + seeded(i * 3) * 0.5).setFill()
         NSBezierPath(ovalIn: NSRect(x: x, y: y, width: s, height: s)).fill()
+    }
+
+    // Soft outer halo so the disk feels like it glows — kept subtle so the
+    // dark space background still shows in the corners.
+    NSGradient(colors: [violet.withAlphaComponent(0.30), pink.withAlphaComponent(0.08), NSColor.clear])!
+        .draw(in: NSBezierPath(ovalIn: NSRect(x: center.x - radius * 0.95, y: center.y - radius * 0.95,
+                                              width: radius * 1.9, height: radius * 1.9)),
+              relativeCenterPosition: .zero)
+
+    // Bright, tight core glow.
+    let coreR = radius * 0.30
+    NSGradient(colors: [NSColor.white, pink.withAlphaComponent(0.85), NSColor.clear])!
+        .draw(in: NSBezierPath(ovalIn: NSRect(x: center.x - coreR, y: center.y - coreR,
+                                              width: coreR * 2, height: coreR * 2)),
+              relativeCenterPosition: .zero)
+
+    // Two spiral arms of glowing dots, pink and aqua, tilted for a disk look.
+    let tilt = CGFloat.pi / 9      // ~20° tilt
+    let cosT = cos(tilt), sinT = sin(tilt)
+    let flatten: CGFloat = 0.72    // squash vertically into an ellipse
+    for (offset, color) in [(0.0, pink), (Double.pi, aqua)] {
+        for i in 0..<140 {
+            let t = Double(i) / 140
+            let angle = offset + t * 3.4 * Double.pi
+            let r = radius * (0.10 + 0.90 * CGFloat(t))
+            let jitter = (seeded(i + Int(offset * 100)) - 0.5) * radius * 0.08
+            // Point on the spiral, then squashed and rotated into the disk plane.
+            let px = CGFloat(cos(angle)) * (r + jitter)
+            let py = CGFloat(sin(angle)) * (r + jitter) * flatten
+            let x = center.x + px * cosT - py * sinT
+            let y = center.y + px * sinT + py * cosT
+            let dot = radius * (0.075 - 0.045 * CGFloat(t))
+            let shade = t < 0.22 ? NSColor.white : color
+            shade.withAlphaComponent(0.95 - 0.45 * CGFloat(t)).setFill()
+            NSBezierPath(ovalIn: NSRect(x: x - dot / 2, y: y - dot / 2, width: dot, height: dot)).fill()
+        }
     }
     NSGraphicsContext.restoreGraphicsState()
 
