@@ -392,25 +392,33 @@ document.getElementById("universal-input").addEventListener("keydown", (e) => {
 });
 
 // Offline keyword router — lets Universal work before an API key is added.
+// Checked top to bottom; first match wins. Text tasks are listed before the
+// broad "make/draw me a …" image rule so "write me an essay" → Claude while
+// "make me an ice cream cone" → Gemini (image).
 const HEURISTICS = [
-  { id: "gemini", re: /\b(image|picture|photo|draw|logo|video|veo|banana)\b/i },
-  { id: "vercel", re: /\b(website|web app|landing page|react|next\.?js|tailwind|ui|component|dashboard|prototype|deploy)\b/i },
-  { id: "deepseek", re: /\b(math|prove|theorem|equation|integral|algorithm|leetcode)\b/i },
-  { id: "claude", re: /\b(code|debug|refactor|document|essay|write|edit|analyze|report|spreadsheet|contract)\b/i },
-  { id: "xai", re: /\b(news|latest|today|real[- ]?time|current|breaking|stock|price)\b/i },
-  { id: "grok", re: /\b(tweet|x post|twitter|thread)\b/i },
+  { id: "vercel", re: /\b(website|web ?app|landing page|react|next\.?js|tailwind|ui|component|dashboard|prototype|deploy|frontend)\b/i },
+  { id: "deepseek", re: /\b(math|prove|theorem|equation|integral|derivative|algorithm|leetcode|calculus)\b/i },
+  { id: "claude", re: /\b(code|debug|refactor|program|function|document|essay|write|rewrite|edit|proofread|summar|analy[sz]e|report|spreadsheet|contract|email|letter|plan|outline|schedule|list|table|translate)\b/i },
+  { id: "xai", re: /\b(news|latest|today|real[- ]?time|current|breaking|stock|price|weather)\b/i },
+  { id: "grok", re: /\b(tweet|x post|twitter|thread|trending on x)\b/i },
+  { id: "gemini", re: /\b(image|picture|pic|photo|draw|drawing|logo|illustration|render|paint|painting|sketch|wallpaper|portrait|avatar|icon|cartoon|poster|video|veo|banana)\b/i },
+  // Catch-all for visual/creative "make/create/generate/draw me a thing".
+  { id: "gemini", re: /\b(make|create|generate|draw|design|show|give)\b.{0,20}\b(a|an|some|me)\b/i },
 ];
 function localRoute(prompt) {
   const has = (id) => providers.some((p) => p.id === id);
   for (const h of HEURISTICS) if (h.re.test(prompt) && has(h.id)) return { provider: h.id, reason: "matched by keywords", local: true };
   const words = new Set((prompt.toLowerCase().match(/[a-z]{4,}/g)) || []);
-  let best = providers[0], score = -1;
+  let best = null, score = 0;
   for (const p of providers) {
     const s = (p.strengths || "").toLowerCase();
     let n = 0; for (const w of words) if (s.includes(w)) n++;
     if (n > score) { score = n; best = p; }
   }
-  return { provider: best ? best.id : "claude", reason: "best match", local: true };
+  if (best) return { provider: best.id, reason: "best match", local: true };
+  // Nothing matched → a general assistant, not whatever happens to be first.
+  const fallback = has("chatgpt") ? "chatgpt" : (providers[0] && providers[0].id) || "chatgpt";
+  return { provider: fallback, reason: "general request", local: true };
 }
 
 // A short chime for replies — works even when Windows mutes toast sounds.
