@@ -20,11 +20,14 @@ struct MediaView: View {
                 empty
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 16)], alignment: .leading, spacing: 16) {
                         ForEach(filtered) { MediaTile(item: $0) }
                     }
-                    .padding(20)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .clipped()
             }
         }
         .background(Theme.contentBackground)

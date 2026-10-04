@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CryptoKit
 import WebKit
 
 /// Owns one long-lived WKWebView per provider. Each one loads the provider's
@@ -36,6 +37,10 @@ final class WebViewStore: NSObject, ObservableObject {
     private var indexTimer: Timer?
     /// Media URLs already saved, so reloads don't duplicate them.
     private var capturedURLs: Set<String>
+    /// Content hashes of saved media, so the same image saved under a new URL
+    /// each visit (as Gemini does) isn't duplicated.
+    private var savedHashes: Set<String>
+    private static let hashesKey = "media.hashes"
     /// Text zoom per AI (1.0 = 100%), set with ⌘+ / ⌘- / ⌘0.
     private var zoomLevels: [ProviderID: Double]
     private static let zoomKey = "webview.zoom"
@@ -49,6 +54,7 @@ final class WebViewStore: NSObject, ObservableObject {
         self.index = index
         self.media = media
         capturedURLs = Set(UserDefaults.standard.stringArray(forKey: Self.capturedKey) ?? [])
+        savedHashes = Set(UserDefaults.standard.stringArray(forKey: Self.hashesKey) ?? [])
         let savedZoom = UserDefaults.standard.dictionary(forKey: Self.zoomKey) as? [String: Double] ?? [:]
         zoomLevels = Dictionary(uniqueKeysWithValues: savedZoom.map { (ProviderID(rawValue: $0.key), $0.value) })
         super.init()
@@ -645,6 +651,7 @@ extension WebViewStore: WKScriptMessageHandler {
         if let dataURL = body["dataURL"] as? String,
            let comma = dataURL.firstIndex(of: ","),
            let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])), !data.isEmpty {
+            guard rememberHash(of: data) else { return }   // already have this exact image
             let ext = Self.fileExtension(fromDataURL: dataURL, fallbackName: suggested)
             let name = Self.filename(suggested: suggested, url: url, ext: ext)
             let dest = Paths.uniqueFile(named: name, in: folder)
@@ -664,6 +671,7 @@ extension WebViewStore: WKScriptMessageHandler {
                 with: cookies.filter { remote.host?.hasSuffix($0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))) == true })
             if let referer = existingWebView(for: id)?.url?.absoluteString { request.setValue(referer, forHTTPHeaderField: "Referer") }
             guard let (data, response) = try? await URLSession.shared.data(for: request), !data.isEmpty else { return }
+            guard rememberHash(of: data) else { return }
             let ext = Self.fileExtension(fromResponse: response, url: remote, fallbackName: suggested)
             let name = Self.filename(suggested: suggested, url: url, ext: ext)
             let dest = Paths.uniqueFile(named: name, in: folder)
@@ -671,6 +679,17 @@ extension WebViewStore: WKScriptMessageHandler {
             media.reload()
             lastDownload = dest
         }
+    }
+
+    /// Records the content hash of `data`. Returns false if we've already saved
+    /// an image with this exact content (so the caller skips writing a dup).
+    private func rememberHash(of data: Data) -> Bool {
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard !savedHashes.contains(hash) else { return false }
+        savedHashes.insert(hash)
+        if savedHashes.count > 4000 { savedHashes = Set(savedHashes.suffix(2000)) }
+        UserDefaults.standard.set(Array(savedHashes), forKey: Self.hashesKey)
+        return true
     }
 
     private static func filename(suggested: String, url: String, ext: String) -> String {
