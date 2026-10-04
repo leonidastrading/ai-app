@@ -810,7 +810,27 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
             decisionHandler(.cancel)
             return
         }
+        // A link you click in a reply that points OUTSIDE the AI's own site
+        // opens in your default browser (a new tab there) — never inside UAI.
+        // The AI's own pages and any sign-in flow stay in-app.
+        if navigationAction.navigationType == .linkActivated,
+           let url = navigationAction.request.url,
+           url.scheme?.hasPrefix("http") == true,
+           navigationAction.targetFrame?.isMainFrame ?? true,
+           let id = provider(of: webView),
+           !isInternalHost(url.host, for: id),
+           !Self.isSignInURL(url), !isIdentityHost(url) {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
         decisionHandler(.allow)
+    }
+
+    /// True when `host` belongs to the AI's own site (so navigation stays in-app).
+    private func isInternalHost(_ host: String?, for id: ProviderID) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return Provider.get(id).hosts.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -926,10 +946,15 @@ extension WebViewStore: WKUIDelegate {
         // login never reaches it. A popup with no URL yet (about:blank that a
         // script then points at a login page) is treated as sign-in too.
         let url = navigationAction.request.url
-        let isSignIn = url == nil || Self.isSignInURL(url) || isIdentityHost(url)
-            || (provider(of: webView).map { needsSignIn.contains($0) } ?? false)
-            || Self.isSignInURL(webView.url)
-        if let url, url.scheme?.hasPrefix("http") == true, !isSignIn {
+        // Stay in-app only for: a script-driven popup with no URL yet
+        // (about:blank that then loads a login page), a known sign-in URL, an
+        // identity provider (Google, Apple, X…), or the AI's OWN pages (so a
+        // same-site "open in new tab" doesn't force a re-login in the browser).
+        // Everything else an AI opens in a new tab goes to your default browser
+        // — even when UAI thinks this AI still needs a sign-in.
+        let isOwnHost = provider(of: webView).map { isInternalHost(url?.host, for: $0) } ?? false
+        let keepInApp = url == nil || Self.isSignInURL(url) || isIdentityHost(url) || isOwnHost
+        if let url, url.scheme?.hasPrefix("http") == true, !keepInApp {
             NSWorkspace.shared.open(url)
             return nil
         }
