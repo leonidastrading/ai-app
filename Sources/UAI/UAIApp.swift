@@ -10,6 +10,7 @@ struct UAIApp: App {
     @StateObject private var universal: UniversalStore
     @StateObject private var webViews: WebViewStore
     @StateObject private var memory: MemoryStore
+    @StateObject private var profile = Profile()
     @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
@@ -32,6 +33,7 @@ struct UAIApp: App {
                 .environmentObject(universal)
                 .environmentObject(webViews)
                 .environmentObject(memory)
+                .environmentObject(profile)
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
@@ -70,6 +72,7 @@ struct UAIApp: App {
                 .environmentObject(universal)
                 .environmentObject(webViews)
                 .environmentObject(memory)
+                .environmentObject(profile)
         }
     }
 }

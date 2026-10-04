@@ -10,10 +10,15 @@ OUT="build"
 APP="$OUT/UAI.app"
 
 swift build -c release --arch arm64 --arch x86_64
-BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/UAI"
+BINDIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 
 rm -rf "$APP" && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/UAI"
+cp "$BINDIR/UAI" "$APP/Contents/MacOS/UAI"
+# Bundled resources (e.g. the Grok Bot icon) live in UAI_UAI.bundle; Bundle.module
+# finds it next to the executable and in Contents/Resources. Copy it or the app crashes.
+for bundle in "$BINDIR"/*.bundle; do
+  [ -e "$bundle" ] && cp -R "$bundle" "$APP/Contents/Resources/" && cp -R "$bundle" "$APP/Contents/MacOS/"
+done
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" packaging/Info.plist > "$APP/Contents/Info.plist"
 
 swift scripts/make-icon.swift "$OUT/AppIcon.iconset"

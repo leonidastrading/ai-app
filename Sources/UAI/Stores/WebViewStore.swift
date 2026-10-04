@@ -96,6 +96,37 @@ final class WebViewStore: NSObject, ObservableObject {
 
     func existingWebView(for id: ProviderID) -> WKWebView? { webViews[id] }
 
+    struct GoogleIdentity { let name: String; let imageURL: String? }
+
+    /// Reads the signed-in Google account's name and avatar from the Gemini
+    /// web view, so the profile can use them. Nil if Gemini isn't signed in.
+    func googleIdentity() async -> GoogleIdentity? {
+        let webView = webView(for: .gemini)
+        let script = """
+        (() => {
+          const a = document.querySelector('a[aria-label^="Google Account"], a[aria-label*="Google Account"]');
+          let name = '', img = '';
+          if (a) {
+            const m = (a.getAttribute('aria-label') || '').match(/Google Account:?\\s*([^(\\n]+)/);
+            if (m) name = m[1].trim();
+            const im = a.querySelector('img'); if (im) img = im.src;
+          }
+          if (!img) { const im = document.querySelector('img[alt*="Account" i], img[src*="googleusercontent"]'); if (im) img = im.src; }
+          return JSON.stringify({ name, img });
+        })()
+        """
+        for _ in 0..<6 {
+            if let json = await evaluate(script, in: webView), let data = json.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+               !(obj["name"]?.isEmpty ?? true) || !(obj["img"]?.isEmpty ?? true) {
+                return GoogleIdentity(name: obj["name"] ?? "", imageURL: obj["img"]?.isEmpty == false ? obj["img"] : nil)
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+        return nil
+    }
+
+
     func provider(of webView: WKWebView?) -> ProviderID? {
         guard let webView else { return nil }
         return webViews.first { $0.value === webView }?.key
@@ -584,10 +615,35 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateSignInState(for: webView)
+        focusComposer(in: webView)
         if let id = provider(of: webView) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak webView] in
                 guard let self, let webView else { return }
                 self.indexChats(in: webView, provider: id)
+            }
+        }
+    }
+
+    /// Puts the cursor in the AI's message box after its page loads, so you
+    /// can type right away — like the composer in Universal AI.
+    private func focusComposer(in webView: WKWebView) {
+        guard !Self.isSignInURL(webView.url) else { return }
+        let script = """
+        (() => {
+          const visible = el => {
+            const r = el.getBoundingClientRect();
+            return r.width > 80 && r.height > 12 && el.offsetParent !== null && !el.disabled && !el.readOnly;
+          };
+          const boxes = [...document.querySelectorAll('textarea, [contenteditable="true"], div[role="textbox"]')].filter(visible);
+          if (!boxes.length) return false;
+          boxes.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
+          boxes[0].focus();
+          return true;
+        })()
+        """
+        for delay in [0.4, 1.0, 2.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak webView] in
+                webView?.evaluateJavaScript(script)
             }
         }
     }

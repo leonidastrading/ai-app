@@ -188,7 +188,7 @@ private struct RailButton<Icon: View>: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 5)
                 .frame(minWidth: 18, minHeight: 18)
-                .background(Capsule().fill(Theme.pink))
+                .background(Capsule().fill(Color.red))
                 .overlay(Capsule().stroke(.white, lineWidth: 1.5))
         case .signIn:
             Image(systemName: "key.fill")

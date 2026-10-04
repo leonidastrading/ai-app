@@ -4,11 +4,69 @@ import WebKit
 struct SettingsView: View {
     var body: some View {
         TabView {
+            AccountSettings().tabItem { Label("Profile", systemImage: "person.crop.circle") }
             ServicesSettings().tabItem { Label("AI Services", systemImage: "square.grid.2x2") }
             UniversalSettings().tabItem { Label("Universal AI", systemImage: "sparkles") }
             DataSettings().tabItem { Label("Data", systemImage: "externaldrive") }
         }
-        .frame(width: 620, height: 460)
+        .frame(width: 620, height: 470)
+    }
+}
+
+private struct AccountSettings: View {
+    @EnvironmentObject private var profile: Profile
+    @EnvironmentObject private var webViews: WebViewStore
+    @State private var importing = false
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 14) {
+                    AvatarView(image: profile.avatar, size: 56)
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("First name", text: $profile.name, prompt: Text("Your name"))
+                            .textFieldStyle(.roundedBorder)
+                        HStack {
+                            Button("Choose Photo…") { profile.chooseAvatarFromDisk() }
+                            if profile.avatar != nil {
+                                Button("Remove") { profile.setAvatar(nil) }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Your profile")
+            } footer: {
+                Text("Shown as “you” in Universal AI. It stays on this Mac — there is no account to sign up for.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button {
+                    importing = true
+                    message = nil
+                    Task {
+                        message = await profile.importFromGoogle(using: webViews) ?? "Imported from your Google account."
+                        importing = false
+                    }
+                } label: {
+                    if importing {
+                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Reading Google account…") }
+                    } else {
+                        Label("Use my Google account", systemImage: "g.circle")
+                    }
+                }
+                .disabled(importing)
+                if let message {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            } footer: {
+                Text("Pulls your first name and photo from the Google account you're signed into in Gemini. Open Gemini and sign in first.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
