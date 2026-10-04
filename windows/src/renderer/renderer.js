@@ -14,6 +14,7 @@ let hidden = new Set();    // provider ids hidden from the rail
 let memory = [];           // user's reusable notes
 
 // -------------------------------------------------------------- startup
+drawGalaxies();   // render the spiral galaxy SVG into the rail icon + hero
 async function boot() {
   const state = await window.api.getState();
   recents = state.universalRecents || [];
@@ -313,6 +314,40 @@ function updateBadges() {
     if (n > 0) { b.textContent = n > 9 ? "9+" : n; b.style.display = "flex"; }
     else b.style.display = "none";
   });
+}
+
+// Draw a real spiral galaxy (matching the app icon) as SVG, for the rail icon
+// and the Universal hero — the old CSS gradient just looked like a blob.
+function galaxySVG() {
+  const cx = 50, cy = 50, R = 46;
+  const seeded = (i) => { const v = Math.sin(i * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  let s = `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<defs><radialGradient id="gcore" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ffffff"/><stop offset="55%" stop-color="#f173ad" stop-opacity="0.85"/><stop offset="100%" stop-color="#f173ad" stop-opacity="0"/></radialGradient></defs>`;
+  s += `<circle cx="50" cy="50" r="50" fill="#0a081a"/>`;
+  for (let i = 0; i < 26; i++) {
+    const x = seeded(i * 7) * 100, y = seeded(i * 13) * 100, rr = 0.3 + seeded(i) * 0.7;
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rr.toFixed(2)}" fill="#fff" opacity="${(0.25 + seeded(i * 3) * 0.5).toFixed(2)}"/>`;
+  }
+  s += `<circle cx="50" cy="50" r="18" fill="url(#gcore)"/>`;
+  const tilt = Math.PI / 9, cosT = Math.cos(tilt), sinT = Math.sin(tilt), flat = 0.75;
+  for (const [off, color] of [[0, "#f173ad"], [Math.PI, "#7fd1e0"]]) {
+    for (let i = 0; i < 60; i++) {
+      const t = i / 60, ang = off + t * 3.3 * Math.PI, r = R * (0.12 + 0.88 * t);
+      const jit = (seeded(i + off * 100) - 0.5) * R * 0.08;
+      const px = Math.cos(ang) * (r + jit), py = Math.sin(ang) * (r + jit) * flat;
+      const x = cx + px * cosT - py * sinT, y = cy + px * sinT + py * cosT;
+      const dot = R * (0.07 - 0.045 * t);
+      const fill = t < 0.22 ? "#ffffff" : color;
+      s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.max(0.4, dot).toFixed(2)}" fill="${fill}" opacity="${(0.95 - 0.5 * t).toFixed(2)}"/>`;
+    }
+  }
+  s += `</svg>`;
+  return s;
+}
+function drawGalaxies() {
+  const svg = galaxySVG();
+  document.querySelectorAll(".galaxy").forEach((el) => { el.innerHTML = svg; });
 }
 
 // Prepend your saved Memory notes as context, so Universal prompts carry them.
