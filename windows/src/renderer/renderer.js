@@ -285,9 +285,9 @@ function updateBadges() {
 }
 
 // -------------------------------------------------------------- universal
-document.getElementById("universal-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const prompt = document.getElementById("universal-input").value.trim();
+async function runUniversal() {
+  const input = document.getElementById("universal-input");
+  const prompt = input.value.trim();
   if (!prompt) return;
   const status = document.getElementById("universal-status");
   status.textContent = "Choosing the best AI…";
@@ -303,8 +303,10 @@ document.getElementById("universal-form").addEventListener("submit", async (e) =
   addGlobalRecent(p.id, p.name, prompt);
   deliver(p.id, prompt);   // create/navigate the webview (at the prompt URL) first
   select(p.id);            // then reveal it
-  document.getElementById("universal-input").value = "";
-});
+  input.value = "";
+}
+document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
+document.getElementById("universal-send").addEventListener("click", (e) => { e.preventDefault(); runUniversal(); });
 
 // Offline keyword router — lets Universal work before an API key is added.
 const HEURISTICS = [
@@ -332,7 +334,8 @@ function localRoute(prompt) {
 document.getElementById("universal-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    document.getElementById("universal-form").requestSubmit();
+    e.stopPropagation();
+    runUniversal();
   }
 });
 
