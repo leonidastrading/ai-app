@@ -6,6 +6,7 @@ struct MediaView: View {
     @EnvironmentObject private var media: MediaLibrary
     @State private var kind: MediaItem.Kind?
     @State private var provider: ProviderID?
+    @State private var confirmClear = false
 
     private var filtered: [MediaItem] {
         media.items.filter { (kind == nil || $0.kind == kind) && (provider == nil || $0.provider == provider) }
@@ -54,6 +55,15 @@ struct MediaView: View {
             Button { media.reload() } label: { Image(systemName: "arrow.clockwise") }
                 .help("Refresh")
             Button { NSWorkspace.shared.open(Paths.media) } label: { Label("Open Folder", systemImage: "folder") }
+            if !media.items.isEmpty {
+                Button(role: .destructive) { confirmClear = true } label: { Label("Clear", systemImage: "trash") }
+                    .confirmationDialog("Move all \(media.items.count) files in your UAI Media folder to the Trash?",
+                                        isPresented: $confirmClear) {
+                        Button("Move \(media.items.count) Files to Trash", role: .destructive) { media.clearAll() }
+                    } message: {
+                        Text("This only affects the UAI Media folder. Your chats and the AIs' own copies are untouched.")
+                    }
+            }
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 16)

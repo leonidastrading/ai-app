@@ -42,7 +42,8 @@ final class WebViewStore: NSObject, ObservableObject {
     private static let capturedKey = "media.capturedURLs"
 
     var autoCapture: Bool {
-        UserDefaults.standard.object(forKey: SettingsKey.autoCaptureMedia) as? Bool ?? true
+        // Off by default: on busy AI pages it would grab unrelated images.
+        UserDefaults.standard.object(forKey: SettingsKey.autoCaptureMedia) as? Bool ?? false
     }
 
     init(index: ConversationIndex, media: MediaLibrary) {

@@ -55,6 +55,12 @@ final class MediaLibrary: ObservableObject {
         items = found.sorted { $0.created > $1.created }
     }
 
+    /// Moves every file in the UAI Media folder to the Trash.
+    func clearAll() {
+        for item in items { try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil) }
+        reload()
+    }
+
     func search(_ query: String) -> [MediaItem] {
         let q = query.lowercased()
         return items.filter { $0.name.lowercased().contains(q) }

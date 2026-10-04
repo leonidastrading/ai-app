@@ -178,7 +178,7 @@ private struct DataSettings: View {
             } header: {
                 Text("Media")
             } footer: {
-                Text("When an AI creates an image or video in its reply, UAI saves a copy here so it shows up in Media. Some sites protect their files and can't be saved automatically — download those from the chat and they'll appear too.")
+                Text("Off by default. When on, UAI saves images and videos it sees in an AI's replies — but on busy pages it may also grab unrelated images, so turn it on only for AIs where it helps. Files you download in UAI always appear here regardless.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("History") {
