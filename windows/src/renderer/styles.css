@@ -223,3 +223,13 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 .mem-row span { flex: 1; }
 .mem-row a { font-size: 12px; color: var(--aqua); }
 .mem-row .mem-del { color: var(--pink); }
+
+/* universal attachments */
+.universal-actions { display: flex; align-items: center; gap: 10px; justify-content: center; margin-top: 10px; }
+#attach-btn { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-dim); background: var(--bg-elev); }
+#attach-btn:hover { color: var(--text); border-color: var(--indigo); }
+#attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+#attachments:empty { display: none; }
+.att { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 6px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; }
+.att img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
+.att .att-x { cursor: pointer; color: var(--pink); margin-left: 4px; }

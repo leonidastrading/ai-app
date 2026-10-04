@@ -47,9 +47,14 @@
             <h1>Universal AI</h1>
             <p class="sub">Ask anything. UAI sends it to the AI best suited for the job.</p>
             <form id="universal-form">
-              <textarea id="universal-input" rows="3" placeholder="Ask anything — e.g. “write a Python script to rename files”, “generate an image of a city at night”…"></textarea>
-              <button type="submit" id="universal-send">Route it</button>
+              <textarea id="universal-input" rows="3" placeholder="Ask anything, or attach an image/file and describe what to do — e.g. “edit this photo to look like winter”…"></textarea>
+              <div id="attachments"></div>
+              <div class="universal-actions">
+                <button type="button" id="attach-btn" title="Attach image or file">📎 Attach</button>
+                <button type="submit" id="universal-send">Route it</button>
+              </div>
             </form>
+            <input id="file-input" type="file" multiple style="display:none" />
             <div id="universal-status"></div>
             <div id="profile" style="display:none"></div>
             <div id="universal-recents"></div>

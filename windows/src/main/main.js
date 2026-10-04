@@ -151,13 +151,14 @@ app.on("web-contents-created", (_event, contents) => {
     if (!/^https?:|^about:/.test(url)) { shell.openExternal(url); return { action: "deny" }; }
     return { action: "allow" }; // sign-in popups / own-site tabs stay in-app
   });
-  contents.on("will-navigate", (e, url) => {
-    // Only redirect real top-level link clicks to external sites.
+  const redirectIfExternal = (e, url) => {
     if (contents.getType() === "webview" && isExternal(url)) {
       e.preventDefault();
       shell.openExternal(url);
     }
-  });
+  };
+  contents.on("will-navigate", redirectIfExternal);
+  contents.on("will-redirect", redirectIfExternal);
 });
 
 // Save downloaded files into the Media folder so they show in the Media tab.

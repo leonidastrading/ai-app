@@ -245,11 +245,11 @@ const PREFILL = {
   vercel: (q) => `https://v0.app/?q=${encodeURIComponent(q)}`,
 };
 
-function deliver(id, text) {
-  // 1) Best: navigate the AI to a URL that carries the prompt. Create the
-  //    webview straight at that URL when it doesn't exist yet (avoids a
-  //    loadURL-before-ready race that dropped the prompt).
-  if (PREFILL[id]) {
+function deliver(id, text, files) {
+  files = files || [];
+  // With files attached we must type into the composer and drop the files in,
+  // so skip the URL-prefill path (a URL can't carry an upload).
+  if (!files.length && PREFILL[id]) {
     const url = PREFILL[id](text);
     const existing = webviews[id];
     if (!existing) { ensureWebview(id, url); }
@@ -258,35 +258,50 @@ function deliver(id, text) {
   }
   const wv = ensureWebview(id);
   if (!wv) return;
-  // 2) Otherwise type it into the composer, retrying until it appears, and
-  //    copy it so you can paste if the site blocks scripted input.
   try { navigator.clipboard.writeText(text); } catch (e) {}
   let n = 0;
   const tryInject = () => {
-    wv.executeJavaScript(deliverScript(text)).then((ok) => {
-      if (!ok && ++n < 24) setTimeout(tryInject, 500);
-    }).catch(() => { if (++n < 24) setTimeout(tryInject, 500); });
+    wv.executeJavaScript(deliverScript(text, files)).then((ok) => {
+      if (!ok && ++n < 30) setTimeout(tryInject, 500);
+    }).catch(() => { if (++n < 30) setTimeout(tryInject, 500); });
   };
-  if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", () => setTimeout(tryInject, 300), { once: true });
-  else setTimeout(tryInject, 300);
+  if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", () => setTimeout(tryInject, 400), { once: true });
+  else setTimeout(tryInject, 400);
 }
 
-function deliverScript(text) {
+function deliverScript(text, files) {
+  files = files || [];
+  const autoSend = files.length === 0;   // don't auto-send when files are attached
   return `(() => {
     const t = ${JSON.stringify(text)};
+    const files = ${JSON.stringify(files)};
     const vis = el => { const r = el.getBoundingClientRect(); return r.width>80 && r.height>12 && el.offsetParent!==null && !el.disabled && !el.readOnly; };
     const boxes = [...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].filter(vis);
     if (!boxes.length) return false;
     boxes.sort((a,b)=>b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom);
     const el = boxes[0]; el.focus();
-    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-      const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-      setter.call(el, t); el.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      el.textContent = t; el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    // Drop any attached files onto the composer (ChatGPT, Gemini, etc. accept it).
+    if (files.length) {
+      try {
+        const toFile = (d, name, type) => { const a = d.split(','); const b = atob(a[1]); let n = b.length; const u = new Uint8Array(n); while(n--) u[n] = b.charCodeAt(n); return new File([u], name, { type }); };
+        const dt = new DataTransfer();
+        for (const f of files) dt.items.add(toFile(f.dataURL, f.name, f.type));
+        const r = el.getBoundingClientRect();
+        const opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: r.top + 20 };
+        el.dispatchEvent(new DragEvent('dragenter', opt));
+        el.dispatchEvent(new DragEvent('dragover', opt));
+        el.dispatchEvent(new DragEvent('drop', opt));
+      } catch (e) {}
     }
-    setTimeout(() => {
+    if (t) {
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, t); el.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        el.textContent = t; el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      }
+    }
+    if (${autoSend}) setTimeout(() => {
       el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
       el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
     }, 500);
@@ -358,38 +373,70 @@ function withMemory(prompt) {
 }
 
 // -------------------------------------------------------------- universal
+let attachments = [];   // [{name, type, dataURL}]
+function renderAttachments() {
+  const box = document.getElementById("attachments");
+  box.innerHTML = attachments.map((a, i) => {
+    const thumb = a.type.startsWith("image/") ? `<img src="${a.dataURL}" alt="">` : `<span>📄</span>`;
+    return `<span class="att">${thumb}<span>${escapeHtml(a.name)}</span><span class="att-x" data-i="${i}">✕</span></span>`;
+  }).join("");
+  box.querySelectorAll(".att-x").forEach((x) => x.onclick = () => { attachments.splice(+x.dataset.i, 1); renderAttachments(); });
+}
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (f.size > 20 * 1024 * 1024) continue;   // 20MB cap
+    const fr = new FileReader();
+    fr.onload = () => { attachments.push({ name: f.name || "file", type: f.type || "application/octet-stream", dataURL: fr.result }); renderAttachments(); };
+    fr.readAsDataURL(f);
+  }
+}
+document.getElementById("attach-btn").onclick = () => document.getElementById("file-input").click();
+document.getElementById("file-input").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
+document.getElementById("universal-input").addEventListener("paste", (e) => {
+  const items = (e.clipboardData || {}).items || [];
+  const files = []; for (const it of items) if (it.kind === "file") { const f = it.getAsFile(); if (f) files.push(f); }
+  if (files.length) { e.preventDefault(); addFiles(files); }
+});
+document.getElementById("pane-universal").addEventListener("dragover", (e) => { e.preventDefault(); });
+document.getElementById("pane-universal").addEventListener("drop", (e) => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
 let routing = false;
 async function runUniversal() {
   if (routing) return;                                  // ignore rapid double Enter
   const input = document.getElementById("universal-input");
   const prompt = input.value.trim();
-  if (!prompt) return;
+  const files = attachments.slice();
+  if (!prompt && !files.length) return;
   routing = true;
-  input.value = "";                                     // clear now so a 2nd Enter no-ops
+  input.value = "";
   const status = document.getElementById("universal-status");
   status.textContent = "Choosing the best AI…";
   try {
+    const hasImage = files.some((a) => a.type.startsWith("image/"));
     let out;
     try {
-      out = (await window.api.hasKey()) ? await window.api.route(prompt) : localRoute(prompt);
+      if (hasImage && !prompt) out = { provider: "gemini", reason: "image attached", local: true };
+      else out = (await window.api.hasKey()) ? await window.api.route(prompt || "edit this image") : localRoute(prompt + (hasImage ? " image photo" : ""));
     } catch (err) {
-      out = localRoute(prompt);   // API error → fall back to offline keyword routing
+      out = localRoute(prompt + (hasImage ? " image photo" : ""));
     }
-    const p = providers.find((x) => x.id === out.provider) || providers[0];
-    status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
-    addRecent(prompt, p.id);
-    addGlobalRecent(p.id, p.name, prompt);
-    deliver(p.id, withMemory(prompt));   // include your memory as context; create/navigate webview
-    select(p.id);                        // then reveal it
+    let p = providers.find((x) => x.id === out.provider) || providers[0];
+    status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}${files.length ? " · with " + files.length + " file(s)" : ""}`;
+    if (prompt) { addRecent(prompt, p.id); addGlobalRecent(p.id, p.name, prompt); }
+    deliver(p.id, withMemory(prompt), files);
+    select(p.id);
+    attachments = []; renderAttachments();
   } finally { routing = false; }
 }
 document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
-// Enter sends (Shift+Enter = new line). Attached directly to the textarea on
-// keydown; no isComposing guard (Windows can flag the first Enter as composing,
-// which was forcing a second press).
-document.getElementById("universal-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runUniversal(); }
-});
+document.getElementById("universal-send").addEventListener("click", (e) => { e.preventDefault(); runUniversal(); });
+// Enter sends (Shift+Enter = new line). Both a direct and a capture handler so
+// it can't be missed on any platform.
+function onUniversalEnter(e) {
+  if (e.target && e.target.id === "universal-input" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runUniversal(); }
+}
+document.getElementById("universal-input").addEventListener("keydown", onUniversalEnter);
+document.addEventListener("keydown", onUniversalEnter, true);
 
 // Offline keyword router — lets Universal work before an API key is added.
 // Checked top to bottom; first match wins. Text tasks are listed before the
