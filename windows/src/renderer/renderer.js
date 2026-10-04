@@ -288,6 +288,13 @@ function updateBadges() {
   });
 }
 
+// Prepend your saved Memory notes as context, so Universal prompts carry them.
+function withMemory(prompt) {
+  if (!memory || !memory.length) return prompt;
+  const ctx = memory.slice(0, 20).map((m) => "- " + m).join("\n");
+  return `Context about me (please keep in mind):\n${ctx}\n\nRequest: ${prompt}`;
+}
+
 // -------------------------------------------------------------- universal
 async function runUniversal() {
   const input = document.getElementById("universal-input");
@@ -305,8 +312,8 @@ async function runUniversal() {
   status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
   addRecent(prompt, p.id);
   addGlobalRecent(p.id, p.name, prompt);
-  deliver(p.id, prompt);   // create/navigate the webview (at the prompt URL) first
-  select(p.id);            // then reveal it
+  deliver(p.id, withMemory(prompt));   // include your memory as context; create/navigate webview
+  select(p.id);                        // then reveal it
   input.value = "";
 }
 document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
