@@ -48,6 +48,7 @@ struct MainView: View {
         .toolbarColorScheme(.dark, for: .windowToolbar)
         .tint(Theme.pink)
         .preferredColorScheme(.dark)
+        .background(WindowConfigurator())
         .sheet(isPresented: $app.showAddAI) { AddAISheet() }
         .onAppear(perform: connectNotifications)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -193,4 +194,19 @@ private struct LinkBanner: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
     }
+}
+
+/// Remembers the main window's size and position across launches, and keeps
+/// it on the near-black background.
+private struct WindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.setFrameAutosaveName("UAIMainWindow")
+            window.backgroundColor = Theme.windowBackgroundNS
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

@@ -47,7 +47,7 @@ struct Provider: Identifiable, Hashable {
 
     static let builtIn: [Provider] = [
         Provider(
-            id: .claude, name: "Claude", maker: "Anthropic",
+            id: .claude, name: "Claude Chat", maker: "Anthropic",
             defaultHomeURL: URL(string: "https://claude.ai/new")!,
             conversationPathHints: ["/chat/"],
             tint: Color(red: 0.85, green: 0.47, blue: 0.34),
