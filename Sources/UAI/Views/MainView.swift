@@ -4,6 +4,7 @@ struct MainView: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
     @EnvironmentObject private var profile: Profile
+    @EnvironmentObject private var history: NotificationHistory
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
