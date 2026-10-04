@@ -49,6 +49,7 @@ struct WebPane: View {
                 ProgressView().controlSize(.small).padding(.leading, 4)
             }
             Spacer()
+            chatsMenu
             Button(action: shareMemory) { Label("Memory", systemImage: "brain.head.profile") }
                 .help("Put your shared memory and related chats from your other AIs into this chat's message box")
             Button { webViews.goHome(provider.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
@@ -63,6 +64,34 @@ struct WebPane: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, 16)
         .frame(height: 48)
+    }
+
+    /// Your chats for this AI, indexed by UAI — a reliable way to reopen one
+    /// even when the AI's own sidebar is collapsed or empty.
+    private var recentChats: [IndexedConversation] {
+        index.items.values.filter { $0.provider == provider.id }
+            .sorted { $0.lastSeen > $1.lastSeen }
+    }
+
+    @ViewBuilder
+    private var chatsMenu: some View {
+        let chats = recentChats
+        Menu {
+            if chats.isEmpty {
+                Text("No chats indexed yet. Open some in \(provider.name).")
+            } else {
+                ForEach(chats.prefix(30)) { chat in
+                    Button(chat.title.isEmpty ? "Untitled chat" : chat.title) {
+                        if let url = URL(string: chat.url) { webViews.open(url, in: provider.id) }
+                    }
+                }
+            }
+        } label: {
+            Label("Chats", systemImage: "bubble.left.and.bubble.right")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Open one of your \(provider.name) chats")
     }
 
     private var signInTip: some View {

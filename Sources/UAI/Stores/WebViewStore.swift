@@ -159,28 +159,35 @@ final class WebViewStore: NSObject, ObservableObject {
     /// rail icon, so the icon matches the avatar you set on that service.
     func captureSiteAvatar(for id: ProviderID) {
         let webView = self.webView(for: id)
+        // Prefer a round (border-radius) image — that's the profile avatar,
+        // not a square logo — then the largest square one.
         let script = """
         (() => {
-          const imgs = [...document.querySelectorAll('img')].filter(i => {
+          const cand = [...document.querySelectorAll('img')].map(i => {
             const s = i.currentSrc || i.src || '';
-            if (!s || /favicon|logo|sprite|emoji/i.test(s)) return false;
             const w = i.naturalWidth || i.width, h = i.naturalHeight || i.height;
-            if (w < 64 || h < 64) return false;
-            const ar = w / h; return ar > 0.8 && ar < 1.25;   // square-ish = an avatar
-          });
-          imgs.sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight));
-          return imgs.length ? (imgs[0].currentSrc || imgs[0].src) : '';
+            const r = i.getBoundingClientRect();
+            const rad = parseFloat(getComputedStyle(i).borderRadius) || 0;
+            const round = rad >= Math.min(r.width, r.height) * 0.35 && r.width > 24;
+            return { s, w, h, round };
+          }).filter(o => o.s && !/favicon|logo|sprite|emoji|icon|\\.svg/i.test(o.s)
+                         && o.w >= 64 && o.h >= 64 && o.w / o.h > 0.8 && o.w / o.h < 1.25);
+          cand.sort((a, b) => (b.round - a.round) || (b.w * b.h - a.w * a.h));
+          return cand.length ? cand[0].s : '';
         })()
         """
         Task { @MainActor in
-            for delay in [1.5, 3.5, 6.0] {
+            for delay in [1.5, 3.5, 6.0, 9.0] {
                 try? await Task.sleep(for: .seconds(delay))
-                guard ProviderRegistry.shared.customIconURL(id) == nil else { return }
+                // Keep refreshing an auto-set icon, but never override one you set yourself.
+                let autoSet = Set(UserDefaults.standard.stringArray(forKey: "icon.auto") ?? [])
+                guard ProviderRegistry.shared.customIconURL(id) == nil || autoSet.contains(id.rawValue) else { return }
                 guard let urlString = await evaluate(script, in: webView), !urlString.isEmpty,
                       let url = URL(string: urlString),
                       let (data, _) = try? await URLSession.shared.data(from: url),
                       let image = NSImage(data: data) else { continue }
                 ProviderRegistry.shared.setCustomIcon(id, image: image)
+                UserDefaults.standard.set(Array(autoSet.union([id.rawValue])), forKey: "icon.auto")
                 return
             }
         }
@@ -490,14 +497,17 @@ extension WebViewStore {
           node.querySelectorAll('video').forEach(tryVideo);
         }
       };
-      // Called when a reply finishes: force a scan of anything new in it.
       window.__uaiScanMedia = () => { armed = true; watch(document); };
       const start = () => {
         watch(document);            // mark everything currently on the page as seen
-        new MutationObserver((muts) => {
-          for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) watch(n);
+        // Watch for new media, but coalesce bursts of DOM changes into one
+        // scan every ~800ms so heavy apps (e.g. Claude) aren't bogged down.
+        let pending = false;
+        new MutationObserver(() => {
+          if (pending) return;
+          pending = true;
+          setTimeout(() => { pending = false; watch(document); }, 800);
         }).observe(document.documentElement, { childList: true, subtree: true });
-        // Arm after the initial page (and its feed) has loaded.
         setTimeout(() => { armed = true; }, 3500);
       };
       if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
@@ -523,12 +533,15 @@ extension WebViewStore {
       const scan = (root) => {
         try { root.querySelectorAll('textarea, input, [contenteditable]').forEach(fix); } catch (e) {}
       };
+      // Re-scan at most a few times a second instead of on every mutation,
+      // so heavy apps (e.g. Claude) aren't bogged down.
       const start = () => {
         scan(document);
-        new MutationObserver((muts) => {
-          for (const m of muts) for (const n of m.addedNodes) {
-            if (n.nodeType === 1) { fix(n); scan(n); }
-          }
+        let pending = false;
+        new MutationObserver(() => {
+          if (pending) return;
+          pending = true;
+          setTimeout(() => { pending = false; scan(document); }, 600);
         }).observe(document.documentElement, { childList: true, subtree: true });
       };
       if (document.documentElement) start();

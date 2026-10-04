@@ -281,12 +281,20 @@ final class ProviderRegistry: ObservableObject {
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) {
             setCustomIcon(id, image: image)
+            clearAutoIcon(id)
         }
     }
 
     func resetCustomIcon(_ id: ProviderID) {
         try? FileManager.default.removeItem(at: Self.iconsDir.appendingPathComponent("\(id.rawValue).png"))
+        clearAutoIcon(id)
         iconVersion += 1
+    }
+
+    private func clearAutoIcon(_ id: ProviderID) {
+        var auto = Set(UserDefaults.standard.stringArray(forKey: "icon.auto") ?? [])
+        auto.remove(id.rawValue)
+        UserDefaults.standard.set(Array(auto), forKey: "icon.auto")
     }
 }
 
