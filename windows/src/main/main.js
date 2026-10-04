@@ -320,12 +320,15 @@ function listMedia() {
         path: full, name: ent.name, folder,
         isScreenshot: folder === "Screenshots",
         kind: kindOf(ext), ext,
-        size: st.size, created: st.birthtimeMs || st.ctimeMs,
+        size: st.size,
+        // When the file landed: prefer the newest of created/modified so
+        // downloads and generated images sort by when you actually got them.
+        created: Math.max(st.birthtimeMs || 0, st.mtimeMs || 0) || st.ctimeMs || 0,
       });
     }
   };
   walk(MEDIA_DIR);
-  return out.sort((a, b) => b.created - a.created);
+  return out.sort((a, b) => b.created - a.created);   // newest first
 }
 function kindOf(ext) {
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "heic"].includes(ext)) return "image";

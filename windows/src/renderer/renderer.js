@@ -323,35 +323,38 @@ function withMemory(prompt) {
 }
 
 // -------------------------------------------------------------- universal
+let routing = false;
 async function runUniversal() {
+  if (routing) return;                                  // ignore rapid double Enter
   const input = document.getElementById("universal-input");
   const prompt = input.value.trim();
   if (!prompt) return;
+  routing = true;
+  input.value = "";                                     // clear now so a 2nd Enter no-ops
   const status = document.getElementById("universal-status");
   status.textContent = "Choosing the best AI…";
-  let out;
   try {
-    out = (await window.api.hasKey()) ? await window.api.route(prompt) : localRoute(prompt);
-  } catch (err) {
-    out = localRoute(prompt);   // API error → fall back to offline keyword routing
-  }
-  const p = providers.find((x) => x.id === out.provider) || providers[0];
-  status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
-  addRecent(prompt, p.id);
-  addGlobalRecent(p.id, p.name, prompt);
-  deliver(p.id, withMemory(prompt));   // include your memory as context; create/navigate webview
-  select(p.id);                        // then reveal it
-  input.value = "";
+    let out;
+    try {
+      out = (await window.api.hasKey()) ? await window.api.route(prompt) : localRoute(prompt);
+    } catch (err) {
+      out = localRoute(prompt);   // API error → fall back to offline keyword routing
+    }
+    const p = providers.find((x) => x.id === out.provider) || providers[0];
+    status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
+    addRecent(prompt, p.id);
+    addGlobalRecent(p.id, p.name, prompt);
+    deliver(p.id, withMemory(prompt));   // include your memory as context; create/navigate webview
+    select(p.id);                        // then reveal it
+  } finally { routing = false; }
 }
 document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
-// Enter sends (Shift+Enter = new line). Document-level capture so it fires no
-// matter how the textarea itself handles the key.
-document.addEventListener("keydown", (e) => {
-  if (e.target && e.target.id === "universal-input" && e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    runUniversal();
-  }
-}, true);
+// Enter sends (Shift+Enter = new line). Attached directly to the textarea on
+// keydown; no isComposing guard (Windows can flag the first Enter as composing,
+// which was forcing a second press).
+document.getElementById("universal-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); runUniversal(); }
+});
 
 // Offline keyword router — lets Universal work before an API key is added.
 const HEURISTICS = [
@@ -519,8 +522,9 @@ function tileHtml(m) {
     ? `<div class="thumb" style="background-image:url('${fileURL(m.path)}')"></div>`
     : `<div class="thumb">${m.kind === "video" ? "🎞" : m.kind === "document" ? "📄" : "📁"}</div>`;
   const kb = m.size > 1048576 ? (m.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(m.size / 1024)) + " KB";
+  const date = m.created ? new Date(m.created).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
   return `<div class="tile" data-path="${escapeAttr(m.path)}">${thumb}
-    <div class="meta"><div class="name">${escapeHtml(m.name)}</div><div class="sub">${escapeHtml(m.folder)} · ${kb}</div></div></div>`;
+    <div class="meta"><div class="name">${escapeHtml(m.name)}</div><div class="sub">${escapeHtml(m.folder)} · ${date} · ${kb}</div></div></div>`;
 }
 document.getElementById("btn-media").onclick = () => select("__media__");
 document.getElementById("media-folder").onclick = () => window.api.openMediaFolder();
