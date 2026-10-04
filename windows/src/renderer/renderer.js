@@ -153,8 +153,30 @@ function ensureWebview(id, initialURL) {
 
   wv.addEventListener("ipc-message", (e) => onWebviewMessage(id, e));
   wv.addEventListener("page-title-updated", () => { /* could index here later */ });
+  // Links an AI opens in a new tab/window → default browser (unless it's the
+  // AI's own site or a sign-in page). Handled here on the webview element so
+  // it works regardless of the main-process path.
+  wv.addEventListener("new-window", (e) => {
+    try { if (e.url && isExternalURL(e.url)) { e.preventDefault(); window.api.openExternal(e.url); } } catch (x) {}
+  });
   if (current === id) wv.classList.add("show");
   return wv;
+}
+
+// Hosts that stay in-app: any AI's own site, plus common sign-in providers.
+const IDENTITY_HOSTS = ["google.com", "accounts.google.com", "apple.com", "icloud.com",
+  "microsoft.com", "microsoftonline.com", "live.com", "facebook.com", "meta.com", "x.com",
+  "twitter.com", "github.com", "okta.com", "auth0.com", "clerk.com", "clerk.dev", "stytch.com",
+  "workos.com", "openai.com", "anthropic.com", "x.ai", "duosecurity.com"];
+function hostIn(host, list) { host = (host || "").toLowerCase(); return list.some((h) => host === h || host.endsWith("." + h)); }
+function isExternalURL(url) {
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return true;   // mailto:/app links → out
+    const providerHosts = [];
+    for (const pr of allKnown) providerHosts.push(...(pr.hosts || []));
+    return !hostIn(u.host, providerHosts.concat(IDENTITY_HOSTS));
+  } catch (e) { return false; }
 }
 
 function onWebviewMessage(id, e) {
