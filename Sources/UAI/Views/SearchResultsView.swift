@@ -33,7 +33,7 @@ struct SearchResultsView: View {
         }
         for entry in universal.search(query).prefix(10) {
             hits.append(Hit(id: "prompt:" + entry.id.uuidString, group: "Universal AI",
-                            icon: AnyView(GalaxyIcon(size: 20)), title: entry.prompt,
+                            icon: AnyView(GalaxyIcon(size: 20, animated: false)), title: entry.prompt,
                             subtitle: "Sent to \(Provider.get(entry.provider).name) · \(entry.date.formatted(date: .abbreviated, time: .shortened))") {
                 app.searchText = ""
                 app.go(.universal)
