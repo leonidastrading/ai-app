@@ -1,12 +1,12 @@
 name: Build UAI
 
 on:
-  # Build only when you ask (Actions tab → Run workflow) or when you push a
-  # version tag like v0.1.0 — NOT on every commit, to avoid burning macOS
-  # build minutes.
+  # Build only when you ask (Actions tab → Run workflow) or when you publish a
+  # release tagged like mac-v0.2.0 — NOT on every commit, to avoid burning
+  # macOS build minutes. (Plain v* tags belong to the Windows auto-updater.)
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    tags: ["mac-v*"]
 
 permissions:
   contents: write
@@ -22,10 +22,10 @@ jobs:
 
       - name: Build UAI.app
         env:
-          UAI_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0' }}
+          UAI_VERSION: ${{ startsWith(github.ref, 'refs/tags/mac-v') && github.ref_name || '0.1.0' }}
           UAI_BUILD: ${{ github.run_number }}
         run: |
-          export UAI_VERSION="${UAI_VERSION#v}"
+          export UAI_VERSION="${UAI_VERSION#mac-v}"
           ./scripts/build-app.sh
 
       - name: Smoke test (launches and stays running)
@@ -42,7 +42,10 @@ jobs:
           path: build/UAI.zip
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/mac-v')
         uses: softprops/action-gh-release@v2
         with:
           files: build/UAI.zip
+          # Never mark a Mac release "Latest": the Windows auto-updater reads
+          # the Latest release's latest.yml, which Mac releases don't have.
+          make_latest: false
