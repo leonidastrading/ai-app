@@ -261,7 +261,9 @@ function deliver(id, text, files) {
   try { navigator.clipboard.writeText(text); } catch (e) {}
   let n = 0;
   const tryInject = () => {
-    wv.executeJavaScript(deliverScript(text, files)).then((ok) => {
+    // Give the composer's file <input> time to appear; only fall back to a
+    // simulated drag-and-drop on the last couple of attempts.
+    wv.executeJavaScript(deliverScript(text, files, n >= 24)).then((ok) => {
       if (!ok && ++n < 30) setTimeout(tryInject, 500);
     }).catch(() => { if (++n < 30) setTimeout(tryInject, 500); });
   };
@@ -269,28 +271,39 @@ function deliver(id, text, files) {
   else setTimeout(tryInject, 400);
 }
 
-function deliverScript(text, files) {
+function deliverScript(text, files, allowDrop) {
   files = files || [];
   const autoSend = files.length === 0;   // don't auto-send when files are attached
   return `(() => {
     const t = ${JSON.stringify(text)};
     const files = ${JSON.stringify(files)};
+    const allowDrop = ${allowDrop ? "true" : "false"};
     const vis = el => { const r = el.getBoundingClientRect(); return r.width>80 && r.height>12 && el.offsetParent!==null && !el.disabled && !el.readOnly; };
     const boxes = [...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].filter(vis);
     if (!boxes.length) return false;
     boxes.sort((a,b)=>b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom);
     const el = boxes[0]; el.focus();
-    // Drop any attached files onto the composer (ChatGPT, Gemini, etc. accept it).
+    // Attach any files. Prefer the composer's real file <input> (ChatGPT, Claude,
+    // Gemini and Grok all have one) — it's far more reliable than a synthetic
+    // drop. Only simulate a drag-and-drop as a last resort (allowDrop), after
+    // we've given the input a chance to render.
+    let fileHandled = !files.length;
     if (files.length) {
       try {
         const toFile = (d, name, type) => { const a = d.split(','); const b = atob(a[1]); let n = b.length; const u = new Uint8Array(n); while(n--) u[n] = b.charCodeAt(n); return new File([u], name, { type }); };
         const dt = new DataTransfer();
         for (const f of files) dt.items.add(toFile(f.dataURL, f.name, f.type));
-        const r = el.getBoundingClientRect();
-        const opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: r.top + 20 };
-        el.dispatchEvent(new DragEvent('dragenter', opt));
-        el.dispatchEvent(new DragEvent('dragover', opt));
-        el.dispatchEvent(new DragEvent('drop', opt));
+        for (const inp of document.querySelectorAll('input[type="file"]')) {
+          try { inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true })); fileHandled = true; break; } catch (e) {}
+        }
+        if (!fileHandled && allowDrop) {
+          const r = el.getBoundingClientRect();
+          const opt = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 20, clientY: r.top + 20 };
+          el.dispatchEvent(new DragEvent('dragenter', opt));
+          el.dispatchEvent(new DragEvent('dragover', opt));
+          el.dispatchEvent(new DragEvent('drop', opt));
+          fileHandled = true;
+        }
       } catch (e) {}
     }
     if (t) {
@@ -305,7 +318,9 @@ function deliverScript(text, files) {
       el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
       el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
     }, 500);
-    return true;
+    // Not done until the files are in (so the caller keeps retrying while the
+    // file input is still rendering); text-only is done once the box is found.
+    return fileHandled;
   })()`;
 }
 
