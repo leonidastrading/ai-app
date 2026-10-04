@@ -161,9 +161,14 @@ function onWebviewMessage(id, e) {
   const p = providers.find((x) => x.id === id);
   if (e.channel === "reply") {
     const d = e.args[0] || {};
-    const viewing = current === id && document.hasFocus();
+    // "Viewing" = this AI's pane is the active one. Don't also require the OS
+    // window to be focused: when the cursor is inside the AI's web view the
+    // host window reports unfocused, which wrongly kept bumping its badge.
+    const viewing = current === id;
     addNotification(id, (p ? p.name : "AI"), d.preview || "Your answer is ready.");
-    if (!viewing) {
+    if (viewing) {
+      unread[id] = 0; updateBadges();   // you're on it — keep it clear
+    } else {
       unread[id] = (unread[id] || 0) + 1; updateBadges();
       window.api.notify({ title: `${p ? p.name : "AI"} replied`, body: d.preview || "Your answer is ready.", providerId: id });
       playChime();
