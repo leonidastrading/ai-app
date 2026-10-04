@@ -38,6 +38,8 @@ struct Provider: Identifiable, Hashable {
     /// Circle color for logos that sit on a solid tile, used if it can't be
     /// read from the logo itself.
     var iconFill: Color? = nil
+    /// Explicit icon URL when the site's favicon is wrong or missing.
+    var iconURLOverride: URL? = nil
 
     static let builtIn: [Provider] = [
         Provider(
@@ -74,12 +76,12 @@ struct Provider: Identifiable, Hashable {
             hosts: ["deepseek.com"]
         ),
         Provider(
-            id: .muse, name: "Muse", maker: "Meta",
-            defaultHomeURL: URL(string: "https://www.meta.ai/")!,
-            conversationPathHints: ["/prompt/", "/c/"],
-            tint: Color(red: 0.00, green: 0.51, blue: 0.98),
-            strengths: "casual chat, Instagram/Facebook/WhatsApp content, quick image ideas",
-            hosts: ["meta.ai", "meta.com"]
+            id: .muse, name: "Muse", maker: "muse.ai",
+            defaultHomeURL: URL(string: "https://muse.ai/")!,
+            conversationPathHints: ["/v/", "/search", "/videos/"],
+            tint: Color(red: 0.93, green: 0.27, blue: 0.47),
+            strengths: "video hosting, AI video search and indexing, transcription, chaptering and captions; finding moments inside your videos",
+            hosts: ["muse.ai"]
         ),
         Provider(
             id: .xai, name: "xAI", maker: "xAI",
@@ -97,7 +99,8 @@ struct Provider: Identifiable, Hashable {
             tint: Color(white: 0.05),
             strengths: "the Grok bot inside X: explaining X posts, trends and breaking news on X/Twitter, accounts and threads",
             hosts: ["x.com", "twitter.com"],
-            iconFill: .black
+            iconFill: .black,
+            iconURLOverride: URL(string: "https://abs.twimg.com/favicons/twitter.3.ico")!
         ),
         Provider(
             id: .vercel, name: "Vercel", maker: "Vercel v0",
@@ -140,7 +143,8 @@ struct Provider: Identifiable, Hashable {
 
     /// Small favicon used for the rail icon; falls back to a letter badge.
     var iconURL: URL {
-        URL(string: "https://www.google.com/s2/favicons?sz=128&domain=\(defaultHomeURL.host ?? "")")!
+        iconURLOverride
+            ?? URL(string: "https://www.google.com/s2/favicons?sz=128&domain=\(defaultHomeURL.host ?? "")")!
     }
 }
 
@@ -206,6 +210,32 @@ final class ProviderRegistry: ObservableObject {
         guard let from = ids.firstIndex(of: id.rawValue), let to = ids.firstIndex(of: target.rawValue) else { return }
         ids.remove(at: from)
         ids.insert(id.rawValue, at: to)
+        save(ids)
+    }
+
+    /// Moves `id` up or down by `offset` positions (right-click menu).
+    func move(_ id: ProviderID, by offset: Int) {
+        var ids = all.map(\.id.rawValue)
+        guard let from = ids.firstIndex(of: id.rawValue) else { return }
+        let to = max(0, min(ids.count - 1, from + offset))
+        guard to != from else { return }
+        let moved = ids.remove(at: from)
+        ids.insert(moved, at: to)
+        save(ids)
+    }
+
+    func moveToTop(_ id: ProviderID) {
+        var ids = all.map(\.id.rawValue)
+        guard let from = ids.firstIndex(of: id.rawValue), from != 0 else { return }
+        let moved = ids.remove(at: from)
+        ids.insert(moved, at: 0)
+        save(ids)
+    }
+
+    func isFirst(_ id: ProviderID) -> Bool { all.first?.id == id }
+    func isLast(_ id: ProviderID) -> Bool { all.last?.id == id }
+
+    private func save(_ ids: [String]) {
         order = ids
         UserDefaults.standard.set(ids, forKey: Self.orderKey)
     }

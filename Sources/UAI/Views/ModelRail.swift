@@ -31,6 +31,7 @@ struct ModelRail: View {
                             }
                             .onDrop(of: [.text], delegate: RailDropDelegate(
                                 target: provider.id, dragging: $dragging, registry: registry))
+                            .animation(.easeInOut(duration: 0.18), value: registry.order)
                     }
 
                     RailButton(name: "Add AI", help: "Add another AI by its web address",
@@ -99,6 +100,13 @@ private struct RailProviderSlot: View {
                     webViews.goHome(provider.id)
                 }
                 Button("Reload") { webViews.reload(provider.id) }
+                Divider()
+                Button("Move Up") { ProviderRegistry.shared.move(provider.id, by: -1) }
+                    .disabled(ProviderRegistry.shared.isFirst(provider.id))
+                Button("Move Down") { ProviderRegistry.shared.move(provider.id, by: 1) }
+                    .disabled(ProviderRegistry.shared.isLast(provider.id))
+                Button("Move to Top") { ProviderRegistry.shared.moveToTop(provider.id) }
+                    .disabled(ProviderRegistry.shared.isFirst(provider.id))
                 Divider()
                 if provider.isCustom {
                     Button("Remove \(provider.name)", role: .destructive) {
@@ -240,21 +248,13 @@ private struct RailDropDelegate: DropDelegate {
     @Binding var dragging: ProviderID?
     let registry: ProviderRegistry
 
-    func dropEntered(info: DropInfo) {
-        guard let dragging, dragging != target else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
-            registry.move(dragging, to: target)
-        }
-    }
-
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if let dragging { registry.move(dragging, to: target) }
         dragging = nil
         return true
     }
-
-    func dropExited(info: DropInfo) {}
 }
