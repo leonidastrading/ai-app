@@ -63,7 +63,7 @@ final class WebViewStore: NSObject, ObservableObject {
         if let existing = webViews[id] { return existing }
 
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
+        config.websiteDataStore = Self.dataStore(for: id)
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
@@ -106,6 +106,15 @@ final class WebViewStore: NSObject, ObservableObject {
         DispatchQueue.main.async { self.loaded.insert(id) }
         webView.load(URLRequest(url: Provider.get(id).homeURL))
         return webView
+    }
+
+    /// Most AIs share the default store. Claude Code shares claude.ai with
+    /// Claude Chat, so it gets its own persistent store to keep their sessions
+    /// (logins, recents, view mode) from interfering.
+    private static func dataStore(for id: ProviderID) -> WKWebsiteDataStore {
+        guard id == .claudeCode else { return .default() }
+        let uuid = UUID(uuidString: "C0DE0000-0000-4000-A000-000000000001")!
+        return WKWebsiteDataStore(forIdentifier: uuid)
     }
 
     func existingWebView(for id: ProviderID) -> WKWebView? { webViews[id] }
@@ -461,7 +470,9 @@ extension WebViewStore {
         if (w < 320 || h < 320) return;
         seen.add(src);
         if (!armed) return;           // pre-existing content: remember, don't save
-        grab(img, src, (img.getAttribute('alt') || '').slice(0, 60));
+        const name = (img.getAttribute('alt') || '').slice(0, 60);
+        if (src.startsWith('data:image')) { send(src, name, src); return; }  // already have the bytes
+        grab(img, src, name);
       };
       const tryVideo = (v) => {
         const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
@@ -469,14 +480,21 @@ extension WebViewStore {
         seen.add(src);
         if (armed) send(src, '', undefined);
       };
+      const watchImg = (i) => {
+        const s = i.currentSrc || i.src || '';
+        if (s.startsWith('data:image')) { tryImg(i); return; }   // inline base64 image
+        i.complete && i.naturalWidth ? tryImg(i) : i.addEventListener('load', () => tryImg(i));
+      };
       const watch = (node) => {
-        if (node.tagName === 'IMG') { node.complete ? tryImg(node) : node.addEventListener('load', () => tryImg(node)); }
-        else if (node.tagName === 'VIDEO') { tryVideo(node); }
+        if (node.tagName === 'IMG') watchImg(node);
+        else if (node.tagName === 'VIDEO') tryVideo(node);
         if (node.querySelectorAll) {
-          node.querySelectorAll('img').forEach(i => i.complete ? tryImg(i) : i.addEventListener('load', () => tryImg(i)));
+          node.querySelectorAll('img').forEach(watchImg);
           node.querySelectorAll('video').forEach(tryVideo);
         }
       };
+      // Called when a reply finishes: force a scan of anything new in it.
+      window.__uaiScanMedia = () => { armed = true; watch(document); };
       const start = () => {
         watch(document);            // mark everything currently on the page as seen
         new MutationObserver((muts) => {
@@ -597,6 +615,10 @@ extension WebViewStore {
             type: 'replyDone', title: document.title,
             preview: (last || '').replace(/\\s+/g, ' ').trim().slice(0, 220)
           });
+          // A reply may include a generated image/video — scan for it now, and
+          // again shortly after in case it finishes rendering a moment later.
+          try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
+          setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
         }
       }, 800);
     })();
@@ -649,6 +671,7 @@ extension WebViewStore: WKScriptMessageHandler {
             var request = URLRequest(url: remote)
             request.allHTTPHeaderFields = HTTPCookie.requestHeaderFields(
                 with: cookies.filter { remote.host?.hasSuffix($0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))) == true })
+            if let referer = existingWebView(for: id)?.url?.absoluteString { request.setValue(referer, forHTTPHeaderField: "Referer") }
             guard let (data, response) = try? await URLSession.shared.data(for: request), !data.isEmpty else { return }
             let ext = Self.fileExtension(fromResponse: response, url: remote, fallbackName: suggested)
             let name = Self.filename(suggested: suggested, url: url, ext: ext)
