@@ -412,22 +412,40 @@ async function openSearchPage(q) {
   select("__search__");
   const page = document.getElementById("search-page");
   const ql = q.toLowerCase();
+  page.innerHTML = `<div class="search-head"><h2>Results for “${escapeHtml(q)}”</h2><button id="route-this" class="primary">Ask Universal AI</button></div><p class="rb-empty">Searching…</p>`;
+  document.getElementById("route-this").onclick = () => { select("__universal__"); const t = document.getElementById("universal-input"); t.value = q; runUniversal(); };
+
   const ais = allKnown.filter((p) => `${p.name} ${p.maker || ""} ${p.strengths || ""}`.toLowerCase().includes(ql));
   const recentMatches = allRecents.filter((r) => r.text.toLowerCase().includes(ql)).slice(0, 40);
   let mediaMatches = [];
   try { mediaMatches = (await window.api.listMedia()).filter((m) => m.name.toLowerCase().includes(ql)).slice(0, 40); } catch (e) {}
 
+  // Search the live page text of every AI you have open this session.
+  const countJS = "(function(q){try{var t=((document.body&&document.body.innerText)||'').toLowerCase();var n=0,i=0;while((i=t.indexOf(q,i))>=0){n++;i+=q.length;}return n;}catch(e){return 0;}})(" + JSON.stringify(ql) + ")";
+  const aiHits = [];
+  for (const [id, wv] of Object.entries(webviews)) {
+    try { const n = await wv.executeJavaScript(countJS); if (n > 0) aiHits.push({ id, n }); } catch (e) {}
+  }
+
   const sec = (title, inner) => inner ? `<div class="res-sec"><h3>${title}</h3>${inner}</div>` : "";
+  const nameOf = (id) => (allKnown.find((p) => p.id === id) || { name: id }).name;
+  const hitHtml = aiHits.map((h) => `<div class="res-row" data-kind="hit" data-id="${h.id}"><span>${escapeHtml(nameOf(h.id))}</span><span class="muted">${h.n} match${h.n === 1 ? "" : "es"} · open &amp; jump to it</span></div>`).join("");
   const aiHtml = ais.map((p) => `<div class="res-row" data-kind="ai" data-id="${p.id}"><img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span><span class="muted">${escapeHtml(p.maker || "")}</span></div>`).join("");
   const recHtml = recentMatches.map((r, i) => `<div class="res-row" data-kind="recent" data-i="${i}"><span class="muted" style="min-width:72px">${escapeHtml(r.name || "AI")}</span><span>${escapeHtml(r.text)}</span></div>`).join("");
   const medHtml = mediaMatches.map((m) => `<div class="res-row" data-kind="media" data-path="${escapeAttr(m.path)}"><span>${escapeHtml(m.name)}</span><span class="muted">${escapeHtml(m.folder)}</span></div>`).join("");
 
+  const any = aiHits.length || ais.length || recentMatches.length || mediaMatches.length;
   page.innerHTML = `<div class="search-head"><h2>Results for “${escapeHtml(q)}”</h2><button id="route-this" class="primary">Ask Universal AI</button></div>` +
-    ((ais.length || recentMatches.length || mediaMatches.length)
-      ? sec("AIs", aiHtml) + sec("Recent prompts", recHtml) + sec("Media", medHtml)
-      : `<p class="rb-empty">No matches here. Try “Ask Universal AI” to send it to the best AI.</p>`);
+    (any
+      ? sec("In your open AIs", hitHtml) + sec("AIs", aiHtml) + sec("Recent prompts", recHtml) + sec("Media", medHtml)
+      : `<p class="rb-empty">No matches in your open AIs, recent prompts, or media. Only AIs you've opened this session can be searched inside — open an AI, then search. Or use “Ask Universal AI”.</p>`);
   page._recent = recentMatches;
-  document.getElementById("route-this").onclick = () => { select("__universal__"); const t = document.getElementById("universal-input"); t.value = q; document.getElementById("universal-form").requestSubmit(); };
+  document.getElementById("route-this").onclick = () => { select("__universal__"); const t = document.getElementById("universal-input"); t.value = q; runUniversal(); };
+  page.querySelectorAll('.res-row[data-kind="hit"]').forEach((el) => el.onclick = () => {
+    const id = el.dataset.id; select(id);
+    const wv = webviews[id];
+    if (wv) setTimeout(() => { try { wv.stopFindInPage("clearSelection"); wv.findInPage(q); } catch (e) {} }, 200);
+  });
   page.querySelectorAll('.res-row[data-kind="ai"]').forEach((el) => el.onclick = () => select(el.dataset.id));
   page.querySelectorAll('.res-row[data-kind="recent"]').forEach((el) => el.onclick = () => { const r = page._recent[+el.dataset.i]; if (r && r.providerId && !hidden.has(r.providerId)) select(r.providerId); });
   page.querySelectorAll('.res-row[data-kind="media"]').forEach((el) => el.onclick = () => window.api.openMediaFile(el.dataset.path));
