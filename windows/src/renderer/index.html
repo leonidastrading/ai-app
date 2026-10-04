@@ -72,6 +72,16 @@
           <div class="settings-inner">
             <h2>Settings</h2>
             <section>
+              <h3>Your profile</h3>
+              <p class="hint">Shown on the Universal page. Auto-filled from your Google account when available, or set it here.</p>
+              <div class="row">
+                <input id="profile-name" placeholder="Your name" />
+                <button id="profile-photo">Choose photo…</button>
+                <button id="profile-save">Save</button>
+              </div>
+              <div id="profile-preview" style="margin-top:8px"></div>
+            </section>
+            <section>
               <h3>Universal AI routing</h3>
               <p class="hint">Universal AI uses an Anthropic API key to pick the best AI for each request. Stored encrypted on this PC only.</p>
               <div class="row">

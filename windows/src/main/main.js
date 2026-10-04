@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Notification, session, safeStorage, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Notification, session, safeStorage, nativeImage, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -262,6 +262,22 @@ ipcMain.handle("media:save", (_e, { dataURL, name, role, providerName }) => {
 });
 
 ipcMain.handle("open-external", (_e, url) => { if (url) shell.openExternal(url); });
+
+// Let the user pick a profile photo; returns a small data URL.
+ipcMain.handle("profile:choosePhoto", async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose a profile photo",
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp"] }],
+  });
+  if (res.canceled || !res.filePaths[0]) return null;
+  try {
+    const img = nativeImage.createFromPath(res.filePaths[0]);
+    if (img.isEmpty()) return null;
+    const sized = img.resize({ width: 128, height: 128, quality: "good" });
+    return sized.toDataURL();
+  } catch (e) { return null; }
+});
 
 // ---------------------------------------------------------------- updates
 function sendUpdate(status, info) {

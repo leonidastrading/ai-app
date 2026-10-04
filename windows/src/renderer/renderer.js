@@ -187,12 +187,34 @@ function renderProfile() {
     `<span class="pf-name">${escapeHtml(profile.name || "Signed in")}</span>`;
 }
 
+// AIs that accept the prompt straight in the URL — the most reliable hand-off.
+const PREFILL = {
+  claude: (q) => `https://claude.ai/new?q=${encodeURIComponent(q)}`,
+  chatgpt: (q) => `https://chatgpt.com/?q=${encodeURIComponent(q)}`,
+  xai: (q) => `https://grok.com/?q=${encodeURIComponent(q)}`,
+  vercel: (q) => `https://v0.app/?q=${encodeURIComponent(q)}`,
+};
+
 function deliver(id, text) {
   const wv = ensureWebview(id);
   if (!wv) return;
-  const run = () => wv.executeJavaScript(deliverScript(text)).catch(() => {});
-  if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", run, { once: true });
-  else { run(); setTimeout(run, 1200); }
+  // 1) Best: navigate the AI to a URL that carries the prompt.
+  if (PREFILL[id]) {
+    const url = PREFILL[id](text);
+    try { wv.loadURL(url); } catch (e) { wv.setAttribute("src", url); }
+    return;
+  }
+  // 2) Otherwise type it into the composer, retrying until it appears, and
+  //    copy it so you can paste if the site blocks scripted input.
+  try { navigator.clipboard.writeText(text); } catch (e) {}
+  let n = 0;
+  const tryInject = () => {
+    wv.executeJavaScript(deliverScript(text)).then((ok) => {
+      if (!ok && ++n < 24) setTimeout(tryInject, 500);
+    }).catch(() => { if (++n < 24) setTimeout(tryInject, 500); });
+  };
+  if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", () => setTimeout(tryInject, 300), { once: true });
+  else setTimeout(tryInject, 300);
 }
 
 function deliverScript(text) {
@@ -404,7 +426,7 @@ document.getElementById("media-clear").onclick = async () => {
 };
 
 // -------------------------------------------------------------- settings
-document.getElementById("btn-settings").onclick = () => select("__settings__");
+document.getElementById("btn-settings").onclick = () => { select("__settings__"); fillProfileSettings(); };
 async function refreshApiKeyStatus() {
   const has = await window.api.hasKey();
   document.getElementById("apikey-status").textContent = has ? "A key is saved." : "No key saved.";
@@ -414,6 +436,28 @@ document.getElementById("apikey-save").onclick = async () => {
   await window.api.setKey(v);
   document.getElementById("apikey").value = "";
   refreshApiKeyStatus();
+};
+
+// ---- profile settings ----
+let pendingPhoto = null;
+function fillProfileSettings() {
+  const n = document.getElementById("profile-name"); if (n) n.value = profile.name || "";
+  renderProfilePreview(profile.avatar || "");
+}
+function renderProfilePreview(url) {
+  const el = document.getElementById("profile-preview"); if (!el) return;
+  el.innerHTML = url ? `<img src="${escapeAttr(url)}" style="width:48px;height:48px;border-radius:50%;object-fit:cover" referrerpolicy="no-referrer"/>` : "";
+}
+document.getElementById("profile-photo").onclick = async () => {
+  const d = await window.api.choosePhoto();
+  if (d) { pendingPhoto = d; renderProfilePreview(d); }
+};
+document.getElementById("profile-save").onclick = () => {
+  const name = document.getElementById("profile-name").value.trim();
+  profile = { name, avatar: pendingPhoto || profile.avatar || "" };
+  window.api.setState({ profile });
+  renderProfile();
+  pendingPhoto = null;
 };
 
 // -------------------------------------------------------------- updates
@@ -513,18 +557,32 @@ function renderRightBar() {
     : `<div class="rb-empty">No replies yet. When an AI answers, it shows up here.</div>`;
   nl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => { const n = notifications[+el.dataset.i]; if (n) select(n.providerId); });
 
-  // Suggestions: your recent routed prompts, re-runnable in one click.
+  // Suggestions: things you can ask. Click one to drop it into Universal AI.
   const sl = document.getElementById("rb-sugg-list");
-  sl.innerHTML = recents.length
-    ? recents.slice(0, 8).map((r, i) => `<div class="rb-item" data-i="${i}"><div class="rb-body">${escapeHtml(r.text)}</div></div>`).join("")
-    : `<div class="rb-empty">Ask Universal AI something and your recent prompts appear here.</div>`;
+  sl.innerHTML = SUGGESTIONS.map((s, i) => `<div class="rb-item" data-i="${i}"><div class="rb-body">${escapeHtml(s)}</div></div>`).join("");
   sl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
-    const r = recents[+el.dataset.i]; if (!r) return;
+    const s = SUGGESTIONS[+el.dataset.i]; if (!s) return;
     select("__universal__");
-    document.getElementById("universal-input").value = r.text;
-    document.getElementById("universal-input").focus();
+    const t = document.getElementById("universal-input");
+    t.value = s; t.focus();
   });
 }
+// A rotating set of starter prompts (shuffled per launch so it feels fresh).
+const SUGGESTION_POOL = [
+  "Summarize this article: (paste a link)",
+  "Write a Python script to rename files in a folder",
+  "Generate an image of a city skyline at night",
+  "Explain this error and how to fix it: (paste it)",
+  "Draft a polite follow-up email to a client",
+  "What's the latest news on (topic)?",
+  "Build a simple landing page for my product",
+  "Solve this step by step: (paste a math problem)",
+  "Turn these notes into a clear summary",
+  "Compare two options and recommend one",
+  "Write unit tests for this function",
+  "Plan a 3-day trip to (place)",
+];
+const SUGGESTIONS = SUGGESTION_POOL.slice().sort(() => Math.random() - 0.5).slice(0, 8);
 document.getElementById("rb-clear").onclick = () => { notifications = []; window.api.setState({ notifications }); renderRightBar(); };
 document.getElementById("btn-rightbar").onclick = () => {
   const app = document.getElementById("app");

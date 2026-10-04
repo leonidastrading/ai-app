@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("api", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   onMediaChanged: (cb) => ipcRenderer.on("media-changed", cb),
   onOpenProvider: (cb) => ipcRenderer.on("open-provider", (_e, id) => cb(id)),
+  choosePhoto: () => ipcRenderer.invoke("profile:choosePhoto"),
   checkUpdate: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   onUpdateStatus: (cb) => ipcRenderer.on("update-status", (_e, p) => cb(p)),
