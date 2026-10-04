@@ -380,4 +380,13 @@ setInterval(updateNavButtons, 800);
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
 
-boot();
+// Start up, and if anything goes wrong show it instead of a dead blank app.
+if (!window.api) {
+  document.body.innerHTML = '<div style="padding:40px;color:#e7e9ee;font:14px system-ui">UAI failed to start: the internal bridge didn\'t load. Please reinstall the latest build.</div>';
+} else {
+  boot().catch((err) => {
+    const s = document.getElementById("status");
+    if (s) s.textContent = "Startup error: " + (err && err.message ? err.message : err);
+    console.error("UAI boot failed:", err);
+  });
+}

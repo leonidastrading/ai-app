@@ -117,6 +117,9 @@ function createWindow() {
       webviewTag: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // The preload uses Node built-ins (path, url); a sandboxed preload can't
+      // require those, which would crash it and leave window.api undefined.
+      sandbox: false,
       spellcheck: true,
     },
   });
