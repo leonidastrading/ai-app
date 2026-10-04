@@ -147,7 +147,12 @@ struct UniversalView: View {
             .padding(.top, 8)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("RECENT").font(.caption.bold()).foregroundStyle(.secondary)
+                HStack {
+                    Text("RECENT").font(.caption.bold()).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear") { universal.clear() }
+                        .buttonStyle(.borderless).font(.caption)
+                }
                 ForEach(universal.history.prefix(8)) { entry in
                     RoutedMessage(entry: entry)
                 }
