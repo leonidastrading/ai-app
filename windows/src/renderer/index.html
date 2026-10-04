@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: https: data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>UAI</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <nav id="rail">
+      <button class="rail-item" id="rail-universal" data-id="__universal__" title="Universal AI">
+        <span class="icon galaxy" id="galaxy-icon"></span>
+        <span class="label">Universal</span>
+      </button>
+      <div id="rail-providers"></div>
+      <button class="rail-item add" id="rail-add" title="Add an AI">
+        <span class="icon plus">+</span>
+        <span class="label">Add</span>
+      </button>
+    </nav>
+
+    <main id="content">
+      <header id="topbar">
+        <div class="nav-btns">
+          <button id="back" title="Back">‹</button>
+          <button id="forward" title="Forward">›</button>
+          <button id="reload" title="Reload">⟳</button>
+        </div>
+        <div class="search-wrap">
+          <input id="search" type="search" placeholder="Search your AIs, or ask Universal AI…" autocomplete="off" />
+          <div id="search-results"></div>
+        </div>
+        <div class="top-actions">
+          <button id="btn-media" title="Media">🖼 Media</button>
+          <button id="btn-settings" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <section id="panes">
+        <!-- Universal page -->
+        <div class="pane" id="pane-universal">
+          <div class="universal-hero">
+            <div class="galaxy big" aria-hidden="true"></div>
+            <h1>Universal AI</h1>
+            <p class="sub">Ask anything. UAI sends it to the AI best suited for the job.</p>
+            <form id="universal-form">
+              <textarea id="universal-input" rows="3" placeholder="Ask anything — e.g. “write a Python script to rename files”, “generate an image of a city at night”…"></textarea>
+              <button type="submit" id="universal-send">Route it</button>
+            </form>
+            <div id="universal-status"></div>
+            <div id="universal-recents"></div>
+          </div>
+        </div>
+
+        <!-- Media page -->
+        <div class="pane" id="pane-media">
+          <div class="media-head">
+            <div class="media-tabs" id="media-tabs"></div>
+            <div class="spacer"></div>
+            <button id="media-folder">Open folder</button>
+            <button id="media-clear" class="danger">Clear</button>
+          </div>
+          <div id="media-grid"></div>
+          <div id="media-empty" class="empty">Nothing here yet. Images your AIs generate — and screenshots you attach — show up here.</div>
+        </div>
+
+        <!-- Settings page -->
+        <div class="pane" id="pane-settings">
+          <div class="settings-inner">
+            <h2>Settings</h2>
+            <section>
+              <h3>Universal AI routing</h3>
+              <p class="hint">Universal AI uses an Anthropic API key to pick the best AI for each request. Stored encrypted on this PC only.</p>
+              <div class="row">
+                <input id="apikey" type="password" placeholder="sk-ant-…" />
+                <button id="apikey-save">Save key</button>
+                <span id="apikey-status"></span>
+              </div>
+            </section>
+            <section>
+              <h3>Your AIs</h3>
+              <div id="settings-providers"></div>
+            </section>
+            <section>
+              <h3>About</h3>
+              <p class="hint">UAI for Windows — all your AI assistants in one window, signed in with your own accounts.</p>
+            </section>
+          </div>
+        </div>
+
+        <!-- Webviews get inserted here -->
+        <div class="pane" id="pane-webviews"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add AI dialog -->
+  <dialog id="add-dialog">
+    <form method="dialog">
+      <h3>Add an AI</h3>
+      <label>Name<input id="add-name" required placeholder="e.g. Perplexity" /></label>
+      <label>Web address<input id="add-url" required placeholder="https://www.perplexity.ai/" /></label>
+      <label>Best at (optional)<input id="add-strengths" placeholder="search with citations" /></label>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button value="ok" id="add-ok">Add</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

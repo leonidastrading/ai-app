@@ -1,0 +1,41 @@
+{
+  "name": "uai",
+  "productName": "UAI",
+  "version": "0.1.0",
+  "description": "Universal AI — all your AI assistants in one window.",
+  "author": "leonidastrading",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "python scripts/make_icon.py",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^32.1.2",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.leonidastrading.uai",
+    "productName": "UAI",
+    "directories": { "output": "dist" },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico",
+      "artifactName": "UAI-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UAI"
+    }
+  }
+}
