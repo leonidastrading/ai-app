@@ -4,6 +4,10 @@ const fs = require("fs");
 const https = require("https");
 const { BUILTIN, IDENTITY_HOSTS, hostMatches } = require("../shared/providers");
 
+// Auto-update from GitHub Releases (optional dependency; never crash without it).
+let autoUpdater = null;
+try { autoUpdater = require("electron-updater").autoUpdater; } catch (e) { /* dev without dep */ }
+
 const USER_DIR = app.getPath("userData");
 const STATE_FILE = path.join(USER_DIR, "state.json");
 const KEY_FILE = path.join(USER_DIR, "apikey.bin");
@@ -259,6 +263,32 @@ ipcMain.handle("media:save", (_e, { dataURL, name, role, providerName }) => {
 
 ipcMain.handle("open-external", (_e, url) => { if (url) shell.openExternal(url); });
 
+// ---------------------------------------------------------------- updates
+function sendUpdate(status, info) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("update-status", { status, info });
+}
+function setupUpdates() {
+  if (!autoUpdater || !app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.on("checking-for-update", () => sendUpdate("checking"));
+  autoUpdater.on("update-available", (info) => sendUpdate("available", { version: info && info.version }));
+  autoUpdater.on("update-not-available", () => sendUpdate("none"));
+  autoUpdater.on("error", (err) => sendUpdate("error", { message: String(err && err.message ? err.message : err) }));
+  autoUpdater.on("download-progress", (p) => sendUpdate("downloading", { percent: Math.round(p.percent || 0) }));
+  autoUpdater.on("update-downloaded", (info) => sendUpdate("ready", { version: info && info.version }));
+  // Quietly check shortly after launch.
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 4000);
+}
+ipcMain.handle("update:check", async () => {
+  if (!autoUpdater || !app.isPackaged) { sendUpdate("none"); return { ok: false, reason: "unavailable" }; }
+  try { await autoUpdater.checkForUpdates(); return { ok: true }; }
+  catch (e) { sendUpdate("error", { message: String(e && e.message ? e.message : e) }); return { ok: false }; }
+});
+ipcMain.handle("update:install", () => {
+  if (autoUpdater && app.isPackaged) autoUpdater.quitAndInstall();
+});
+ipcMain.handle("app:version", () => app.getVersion());
+
 function listMedia() {
   const out = [];
   const walk = (dir) => {
@@ -291,6 +321,7 @@ function kindOf(ext) {
 app.whenReady().then(() => {
   wireDownloads(session.defaultSession);
   createWindow();
+  setupUpdates();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

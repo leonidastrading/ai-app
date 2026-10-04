@@ -26,21 +26,18 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build installer
+      - name: Build installer and publish release
         env:
           # No signing certificate — produce an unsigned installer (like the
           # ad-hoc macOS build). Users click "More info → Run anyway" once.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run dist
+          # Lets electron-builder publish a GitHub Release (installer + the
+          # latest.yml feed that the in-app updater reads).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
 
-      - name: Upload installer
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: UAI-Windows
           path: windows/dist/*.exe
-
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/win-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: windows/dist/*.exe

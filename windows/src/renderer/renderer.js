@@ -8,14 +8,18 @@ let current = "__universal__";
 const webviews = {};       // id -> <webview>
 const unread = {};         // id -> count
 let recents = [];
+let notifications = [];
 
 // -------------------------------------------------------------- startup
 async function boot() {
   const state = await window.api.getState();
   recents = state.universalRecents || [];
+  notifications = state.notifications || [];
+  if (state.rbHidden) document.getElementById("app").classList.add("rb-hidden");
   await loadProviders(state);
   buildRail();
   renderRecents();
+  renderRightBar();
   select("__universal__");
   refreshApiKeyStatus();
   buildSettingsProviders();
@@ -94,8 +98,11 @@ function select(id) {
   document.getElementById("btn-settings").classList.toggle("active", id === "__settings__");
 
   if (isProvider(id)) {
-    ensureWebview(id);
+    const wv = ensureWebview(id);
     unread[id] = 0; updateBadges();
+    if (wv) setTimeout(() => { try { wv.focus(); } catch (e) {} }, 60);
+  } else if (id === "__universal__") {
+    setTimeout(() => { const t = document.getElementById("universal-input"); if (t) t.focus(); }, 60);
   }
   updateNavButtons();
 }
@@ -122,7 +129,9 @@ function ensureWebview(id) {
   const p = providers.find((x) => x.id === id);
   if (!p) return null;
   const wv = document.createElement("webview");
-  wv.setAttribute("partition", "persist:" + id);
+  // One shared, persistent session for all AIs, so a single Google (or other)
+  // sign-in is recognized across every AI instead of logging in each one.
+  wv.setAttribute("partition", "persist:uai");
   wv.setAttribute("preload", window.api.webviewPreload);
   wv.setAttribute("allowpopups", "");
   wv.setAttribute("src", p.home);
@@ -139,10 +148,11 @@ function ensureWebview(id) {
 function onWebviewMessage(id, e) {
   const p = providers.find((x) => x.id === id);
   if (e.channel === "reply") {
+    const d = e.args[0] || {};
     const viewing = current === id && document.hasFocus();
+    addNotification(id, (p ? p.name : "AI"), d.preview || "Your answer is ready.");
     if (!viewing) {
       unread[id] = (unread[id] || 0) + 1; updateBadges();
-      const d = e.args[0] || {};
       window.api.notify({ title: `${p ? p.name : "AI"} replied`, body: d.preview || "Your answer is ready.", providerId: id });
     }
   } else if (e.channel === "media") {
@@ -210,30 +220,49 @@ document.getElementById("universal-form").addEventListener("submit", async (e) =
   const prompt = document.getElementById("universal-input").value.trim();
   if (!prompt) return;
   const status = document.getElementById("universal-status");
-  if (!(await window.api.hasKey())) {
-    status.innerHTML = `Add an Anthropic API key in <a href="#" id="go-settings">Settings</a> to use routing — or click an AI on the left.`;
-    document.getElementById("go-settings").onclick = () => select("__settings__");
-    return;
-  }
   status.textContent = "Choosing the best AI…";
+  let out;
   try {
-    const out = await window.api.route(prompt);
-    const p = providers.find((x) => x.id === out.provider) || providers[0];
-    status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}`;
-    addRecent(prompt, p.id);
-    select(p.id);
-    deliver(p.id, prompt);
-    document.getElementById("universal-input").value = "";
+    out = (await window.api.hasKey()) ? await window.api.route(prompt) : localRoute(prompt);
   } catch (err) {
-    status.textContent = "Routing failed: " + (err && err.message ? err.message : err);
+    out = localRoute(prompt);   // API error → fall back to offline keyword routing
   }
+  const p = providers.find((x) => x.id === out.provider) || providers[0];
+  status.textContent = `Sent to ${p.name}${out.reason ? " — " + out.reason : ""}${out.local ? " (offline routing)" : ""}`;
+  addRecent(prompt, p.id);
+  select(p.id);
+  deliver(p.id, prompt);
+  document.getElementById("universal-input").value = "";
 });
+
+// Offline keyword router — lets Universal work before an API key is added.
+const HEURISTICS = [
+  { id: "gemini", re: /\b(image|picture|photo|draw|logo|video|veo|banana)\b/i },
+  { id: "vercel", re: /\b(website|web app|landing page|react|next\.?js|tailwind|ui|component|dashboard|prototype|deploy)\b/i },
+  { id: "deepseek", re: /\b(math|prove|theorem|equation|integral|algorithm|leetcode)\b/i },
+  { id: "claude", re: /\b(code|debug|refactor|document|essay|write|edit|analyze|report|spreadsheet|contract)\b/i },
+  { id: "xai", re: /\b(news|latest|today|real[- ]?time|current|breaking|stock|price)\b/i },
+  { id: "grok", re: /\b(tweet|x post|twitter|thread)\b/i },
+];
+function localRoute(prompt) {
+  const has = (id) => providers.some((p) => p.id === id);
+  for (const h of HEURISTICS) if (h.re.test(prompt) && has(h.id)) return { provider: h.id, reason: "matched by keywords", local: true };
+  const words = new Set((prompt.toLowerCase().match(/[a-z]{4,}/g)) || []);
+  let best = providers[0], score = -1;
+  for (const p of providers) {
+    const s = (p.strengths || "").toLowerCase();
+    let n = 0; for (const w of words) if (s.includes(w)) n++;
+    if (n > score) { score = n; best = p; }
+  }
+  return { provider: best ? best.id : "claude", reason: "best match", local: true };
+}
 
 function addRecent(text, providerId) {
   recents.unshift({ text, providerId, at: Date.now() });
   recents = recents.slice(0, 12);
   window.api.setState({ universalRecents: recents });
   renderRecents();
+  renderRightBar();
 }
 function renderRecents() {
   const box = document.getElementById("universal-recents");
@@ -302,9 +331,14 @@ async function loadMedia() {
     el.oncontextmenu = (e) => { e.preventDefault(); window.api.revealMedia(el.dataset.path); };
   });
 }
+function fileURL(p) {
+  // Windows paths use backslashes and a drive letter; turn them into a valid
+  // file:/// URL (forward slashes, encoded spaces) so the preview loads.
+  return "file:///" + encodeURI(String(p).replace(/\\/g, "/")).replace(/'/g, "%27");
+}
 function tileHtml(m) {
   const thumb = m.kind === "image"
-    ? `<div class="thumb" style="background-image:url('file://${encodeURI(m.path).replace(/'/g, "%27")}')"></div>`
+    ? `<div class="thumb" style="background-image:url('${fileURL(m.path)}')"></div>`
     : `<div class="thumb">${m.kind === "video" ? "🎞" : m.kind === "document" ? "📄" : "📁"}</div>`;
   const kb = m.size > 1048576 ? (m.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(m.size / 1024)) + " KB";
   return `<div class="tile" data-path="${escapeAttr(m.path)}">${thumb}
@@ -328,6 +362,29 @@ document.getElementById("apikey-save").onclick = async () => {
   document.getElementById("apikey").value = "";
   refreshApiKeyStatus();
 };
+
+// -------------------------------------------------------------- updates
+(async () => {
+  try { const v = await window.api.appVersion(); const el = document.getElementById("about-version"); if (el) el.textContent = "v" + v; } catch (e) {}
+})();
+document.getElementById("update-check").onclick = async () => {
+  document.getElementById("update-status").textContent = "Checking…";
+  await window.api.checkUpdate();
+};
+window.api.onUpdateStatus(({ status, info }) => {
+  const s = document.getElementById("update-status");
+  const installBtn = document.getElementById("update-install");
+  if (!s) return;
+  if (status === "checking") s.textContent = "Checking…";
+  else if (status === "available") s.textContent = `Downloading ${info && info.version ? "v" + info.version : "update"}…`;
+  else if (status === "downloading") s.textContent = `Downloading… ${info ? info.percent : 0}%`;
+  else if (status === "none") s.textContent = "You're on the latest version.";
+  else if (status === "error") s.textContent = "Update check failed: " + (info && info.message ? info.message : "");
+  else if (status === "ready") {
+    s.textContent = `Update ${info && info.version ? "v" + info.version : ""} ready.`;
+    if (installBtn) { installBtn.style.display = ""; installBtn.onclick = () => window.api.installUpdate(); }
+  }
+});
 function buildSettingsProviders() {
   const box = document.getElementById("settings-providers");
   box.innerHTML = providers.map((p) =>
@@ -379,6 +436,48 @@ setInterval(updateNavButtons, 800);
 // -------------------------------------------------------------- utils
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function escapeAttr(s) { return escapeHtml(s); }
+
+// -------------------------------------------------------------- right bar
+function addNotification(providerId, name, preview) {
+  notifications.unshift({ providerId, name, preview, at: Date.now() });
+  notifications = notifications.slice(0, 50);
+  window.api.setState({ notifications });
+  renderRightBar();
+}
+function timeAgo(ts) {
+  const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.round(s / 60) + "m";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+}
+function renderRightBar() {
+  const nl = document.getElementById("rb-notif-list");
+  nl.innerHTML = notifications.length
+    ? notifications.map((n, i) => `<div class="rb-item" data-i="${i}">
+        <div class="rb-title"><span>${escapeHtml(n.name)}</span><span class="rb-time">${timeAgo(n.at)}</span></div>
+        <div class="rb-body">${escapeHtml(n.preview || "")}</div></div>`).join("")
+    : `<div class="rb-empty">No replies yet. When an AI answers, it shows up here.</div>`;
+  nl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => { const n = notifications[+el.dataset.i]; if (n) select(n.providerId); });
+
+  // Suggestions: your recent routed prompts, re-runnable in one click.
+  const sl = document.getElementById("rb-sugg-list");
+  sl.innerHTML = recents.length
+    ? recents.slice(0, 8).map((r, i) => `<div class="rb-item" data-i="${i}"><div class="rb-body">${escapeHtml(r.text)}</div></div>`).join("")
+    : `<div class="rb-empty">Ask Universal AI something and your recent prompts appear here.</div>`;
+  sl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
+    const r = recents[+el.dataset.i]; if (!r) return;
+    select("__universal__");
+    document.getElementById("universal-input").value = r.text;
+    document.getElementById("universal-input").focus();
+  });
+}
+document.getElementById("rb-clear").onclick = () => { notifications = []; window.api.setState({ notifications }); renderRightBar(); };
+document.getElementById("btn-rightbar").onclick = () => {
+  const app = document.getElementById("app");
+  app.classList.toggle("rb-hidden");
+  window.api.setState({ rbHidden: app.classList.contains("rb-hidden") });
+};
 
 // Start up, and if anything goes wrong show it instead of a dead blank app.
 if (!window.api) {

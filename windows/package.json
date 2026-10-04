@@ -1,7 +1,7 @@
 {
   "name": "uai",
   "productName": "UAI",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Universal AI — all your AI assistants in one window.",
   "author": "leonidastrading",
   "license": "UNLICENSED",
@@ -11,6 +11,9 @@
     "start": "electron .",
     "icon": "python scripts/make_icon.py",
     "dist": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^32.1.2",
@@ -23,6 +26,9 @@
     "files": [
       "src/**/*",
       "assets/**/*"
+    ],
+    "publish": [
+      { "provider": "github", "owner": "leonidastrading", "repo": "ai-app", "releaseType": "release" }
     ],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],

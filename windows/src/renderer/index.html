@@ -34,6 +34,7 @@
         <div class="top-actions">
           <button id="btn-media" title="Media">🖼 Media</button>
           <button id="btn-settings" title="Settings">⚙</button>
+          <button id="btn-rightbar" title="Show/hide the activity panel">⇥</button>
         </div>
       </header>
 
@@ -83,8 +84,17 @@
               <div id="settings-providers"></div>
             </section>
             <section>
+              <h3>Updates</h3>
+              <p class="hint">UAI can update itself from GitHub — no manual reinstall.</p>
+              <div class="row">
+                <button id="update-check">Check for updates</button>
+                <button id="update-install" style="display:none; background:var(--pink)">Restart &amp; install</button>
+                <span id="update-status"></span>
+              </div>
+            </section>
+            <section>
               <h3>About</h3>
-              <p class="hint">UAI for Windows — all your AI assistants in one window, signed in with your own accounts.</p>
+              <p class="hint">UAI for Windows — all your AI assistants in one window, signed in with your own accounts. <span id="about-version"></span></p>
             </section>
           </div>
         </div>
@@ -93,6 +103,17 @@
         <div class="pane" id="pane-webviews"></div>
       </section>
     </main>
+
+    <aside id="rightbar">
+      <div class="rb-section rb-notifications">
+        <div class="rb-head"><span>Notifications</span><button id="rb-clear" title="Clear">Clear</button></div>
+        <div id="rb-notif-list" class="rb-list"></div>
+      </div>
+      <div class="rb-section rb-suggestions">
+        <div class="rb-head"><span>Suggestions</span></div>
+        <div id="rb-sugg-list" class="rb-list"></div>
+      </div>
+    </aside>
   </div>
 
   <!-- Add AI dialog -->
