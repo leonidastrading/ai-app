@@ -16,17 +16,22 @@ function favicon(p) { try { return `https://www.google.com/s2/favicons?sz=128&do
 function byId(id) { return allProviders().find((p) => p.id === id); }
 
 // ---------------------------------------------------------- open an AI
+// Always copy the prompt to the clipboard FIRST (synchronously, inside the
+// click), so the hand-off works no matter what opens — a browser tab, or the
+// AI's desktop app (which ignores the web ?q= param). Where the site supports
+// a query param we also pre-fill it so it types itself in.
 function openProvider(p, prompt) {
-  if (prompt && p.prefill) {
-    window.open(p.prefill(prompt), "_blank", "noopener");
-  } else if (prompt) {
+  if (prompt) {
     copy(prompt);
-    toast(`Prompt copied — paste it into ${p.name}`);
-    window.open(p.home, "_blank", "noopener");
+    const url = p.prefill ? p.prefill(prompt) : p.home;
+    toast(p.prefill ? `Opening ${p.name} — prompt copied as a backup` : `Prompt copied — press ⌘/Ctrl+V in ${p.name}`);
+    window.open(url, "_blank", "noopener");
   } else {
     window.open(p.home, "_blank", "noopener");
   }
 }
+// Fire-and-forget clipboard write. Must be called while the click gesture is
+// still active (i.e. before any await), or the browser rejects it.
 function copy(text) { try { navigator.clipboard.writeText(text); } catch (e) {} }
 
 // ---------------------------------------------------------- routing
@@ -76,14 +81,19 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
   const status = document.getElementById("status");
   const btn = document.getElementById("ask-btn");
   if (!prompt) return;
+  // Copy NOW, while the click gesture is still active — routing is async and
+  // would otherwise invalidate the clipboard permission.
+  copy(prompt);
   btn.disabled = true; status.textContent = "Choosing the best AI…";
   try {
     const out = await route(prompt);
     const p = byId(out.provider);
-    status.innerHTML = `Opening <strong>${esc(p.name)}</strong>${out.reason ? " — " + esc(out.reason) : ""}${out.local ? ' <span class="muted">(offline routing)</span>' : ""}`;
-    openProvider(p, prompt);
+    const url = p.prefill ? p.prefill(prompt) : p.home;
+    window.open(url, "_blank", "noopener");
+    const hint = p.prefill ? "" : " — your prompt is copied, press ⌘/Ctrl+V to paste";
+    status.innerHTML = `Opened <strong>${esc(p.name)}</strong>${out.reason ? " — " + esc(out.reason) : ""}${out.local ? ' <span class="muted">(offline)</span>' : ""}${hint}`;
   } catch (err) {
-    status.textContent = "Couldn’t route that. Pick an AI below.";
+    status.textContent = "Couldn’t route that. Pick an AI below (your prompt is copied).";
   } finally { btn.disabled = false; }
 });
 
@@ -115,6 +125,6 @@ function toast(msg) {
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 document.getElementById("note").innerHTML =
-  "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab — with your question pre-filled where the AI supports it. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
+  "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab with your question pre-filled where the AI supports it (Claude, ChatGPT, xAI, v0). For the rest — and if a link opens the AI’s desktop app, which drops the pre-fill — your prompt is copied to the clipboard: just press ⌘/Ctrl+V. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
 
 renderGrid();
