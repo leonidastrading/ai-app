@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UAI — Universal AI</title>
+  <meta name="description" content="All your AI assistants in one place. Ask once; UAI opens the best one for the job." />
+  <link rel="icon" href="icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="galaxy"></span> <strong>UAI</strong> <span class="muted">Universal AI</span></div>
+    <button id="settings-btn" class="ghost">Settings</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="galaxy big" aria-hidden="true"></div>
+      <h1>Ask anything.</h1>
+      <p class="sub">UAI picks the AI best suited to your request and opens it with your question ready to go.</p>
+      <form id="ask-form">
+        <textarea id="ask" rows="3" placeholder="e.g. “write a Python script to rename files”, “generate an image of a city at night”, “what’s the latest on …”"></textarea>
+        <button type="submit" id="ask-btn">Route it</button>
+      </form>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="grid-wrap">
+      <h2>Your AIs <span class="muted">— click to open</span></h2>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <p class="note" id="note"></p>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h3>Settings</h3>
+      <h4>Add an AI</h4>
+      <label>Name<input id="add-name" placeholder="Perplexity" /></label>
+      <label>Web address<input id="add-url" placeholder="https://www.perplexity.ai/" /></label>
+      <button type="button" id="add-btn" class="primary">Add</button>
+      <div id="custom-list"></div>
+      <h4>About</h4>
+      <p class="muted small">This is the web version of UAI. Browsers don’t allow embedding your logged-in AI sites, so this is a launcher + router. The macOS and Windows apps run each AI inside the app with your accounts.</p>
+      <menu><button value="close" class="primary">Done</button></menu>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="providers.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
