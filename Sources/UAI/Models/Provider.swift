@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Identifies one AI in the rail. Built-in AIs have fixed IDs; AIs you add
@@ -8,6 +9,7 @@ struct ProviderID: RawRepresentable, Hashable, Codable, Identifiable {
     var id: String { rawValue }
 
     static let claude = ProviderID(rawValue: "claude")
+    static let claudeCode = ProviderID(rawValue: "claudecode")
     static let chatgpt = ProviderID(rawValue: "chatgpt")
     static let gemini = ProviderID(rawValue: "gemini")
     static let deepseek = ProviderID(rawValue: "deepseek")
@@ -51,6 +53,15 @@ struct Provider: Identifiable, Hashable {
             tint: Color(red: 0.85, green: 0.47, blue: 0.34),
             strengths: "coding, debugging, long documents, careful writing and editing, analysis, reports",
             hosts: ["claude.ai", "anthropic.com"],
+            iconFill: Color(red: 0.85, green: 0.47, blue: 0.34)
+        ),
+        Provider(
+            id: .claudeCode, name: "Claude Code", maker: "Anthropic",
+            defaultHomeURL: URL(string: "https://claude.ai/code")!,
+            conversationPathHints: ["/code/"],
+            tint: Color(red: 0.72, green: 0.40, blue: 0.30),
+            strengths: "agentic coding: editing a codebase, running commands, building and fixing software, pull requests, multi-step engineering tasks",
+            hosts: ["claude.ai", "anthropic.com", "code.claude.com"],
             iconFill: Color(red: 0.85, green: 0.47, blue: 0.34)
         ),
         Provider(
@@ -253,6 +264,39 @@ final class ProviderRegistry: ObservableObject {
     func remove(_ id: ProviderID) {
         custom.removeAll { $0.id == id.rawValue }
         JSONFile.save(custom, to: Self.file)
+    }
+
+    // MARK: - Custom rail icons (right-click → Set Icon…, or auto from a page)
+
+    /// Bumped whenever a custom icon changes, so icons refresh.
+    @Published private(set) var iconVersion = 0
+
+    private static var iconsDir: URL { Paths.ensure(Paths.appSupport.appendingPathComponent("icons", isDirectory: true)) }
+
+    func customIconURL(_ id: ProviderID) -> URL? {
+        let url = Self.iconsDir.appendingPathComponent("\(id.rawValue).png")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func setCustomIcon(_ id: ProviderID, image: NSImage) {
+        guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: Self.iconsDir.appendingPathComponent("\(id.rawValue).png"))
+        iconVersion += 1
+    }
+
+    func chooseCustomIcon(_ id: ProviderID) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) {
+            setCustomIcon(id, image: image)
+        }
+    }
+
+    func resetCustomIcon(_ id: ProviderID) {
+        try? FileManager.default.removeItem(at: Self.iconsDir.appendingPathComponent("\(id.rawValue).png"))
+        iconVersion += 1
     }
 }
 

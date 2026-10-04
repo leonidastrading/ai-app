@@ -42,8 +42,7 @@ final class WebViewStore: NSObject, ObservableObject {
     private static let capturedKey = "media.capturedURLs"
 
     var autoCapture: Bool {
-        // Off by default: on busy AI pages it would grab unrelated images.
-        UserDefaults.standard.object(forKey: SettingsKey.autoCaptureMedia) as? Bool ?? false
+        UserDefaults.standard.object(forKey: SettingsKey.autoCaptureMedia) as? Bool ?? true
     }
 
     init(index: ConversationIndex, media: MediaLibrary) {
@@ -148,6 +147,37 @@ final class WebViewStore: NSObject, ObservableObject {
             try? await Task.sleep(for: .milliseconds(400))
         }
         return nil
+    }
+
+    /// Reads a site's profile avatar (e.g. Muse's Boobie) and uses it as the
+    /// rail icon, so the icon matches the avatar you set on that service.
+    func captureSiteAvatar(for id: ProviderID) {
+        let webView = self.webView(for: id)
+        let script = """
+        (() => {
+          const imgs = [...document.querySelectorAll('img')].filter(i => {
+            const s = i.currentSrc || i.src || '';
+            if (!s || /favicon|logo|sprite|emoji/i.test(s)) return false;
+            const w = i.naturalWidth || i.width, h = i.naturalHeight || i.height;
+            if (w < 64 || h < 64) return false;
+            const ar = w / h; return ar > 0.8 && ar < 1.25;   // square-ish = an avatar
+          });
+          imgs.sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight));
+          return imgs.length ? (imgs[0].currentSrc || imgs[0].src) : '';
+        })()
+        """
+        Task { @MainActor in
+            for delay in [1.5, 3.5, 6.0] {
+                try? await Task.sleep(for: .seconds(delay))
+                guard ProviderRegistry.shared.customIconURL(id) == nil else { return }
+                guard let urlString = await evaluate(script, in: webView), !urlString.isEmpty,
+                      let url = URL(string: urlString),
+                      let (data, _) = try? await URLSession.shared.data(from: url),
+                      let image = NSImage(data: data) else { continue }
+                ProviderRegistry.shared.setCustomIcon(id, image: image)
+                return
+            }
+        }
     }
 
 
@@ -419,28 +449,43 @@ extension WebViewStore {
         send(src, name, dataURL || undefined);
       };
 
-      const consider = () => {
-        const scope = document.querySelector('main') || document.body;
-        if (!scope) return;
-        for (const img of scope.querySelectorAll('img')) {
-          const src = img.currentSrc || img.src;
-          if (!src || seen.has(src) || skip.test(src)) continue;
-          if (/^data:image\\/(gif|svg)/.test(src)) continue;
-          const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-          // Generated images are large; this skips inline icons and stickers.
-          if (w < 320 || h < 320) continue;
-          seen.add(src);
-          grab(img, src, (img.getAttribute('alt') || '').slice(0, 60));
-        }
-        for (const v of scope.querySelectorAll('video')) {
-          const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
-          if (!src || seen.has(src) || src.startsWith('blob:')) continue;
-          seen.add(src);
-          send(src, '', undefined);
+      // Only capture media that appears AFTER the page settles — i.e. things
+      // an AI generates in reply to you — never the images already on the page
+      // (feeds, galleries, UI). That's what pulled in unrelated images before.
+      let armed = false;
+      const tryImg = (img) => {
+        const src = img.currentSrc || img.src;
+        if (!src || seen.has(src) || skip.test(src)) return;
+        if (/^data:image\\/(gif|svg)/.test(src)) return;
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (w < 320 || h < 320) return;
+        seen.add(src);
+        if (!armed) return;           // pre-existing content: remember, don't save
+        grab(img, src, (img.getAttribute('alt') || '').slice(0, 60));
+      };
+      const tryVideo = (v) => {
+        const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
+        if (!src || seen.has(src) || src.startsWith('blob:')) return;
+        seen.add(src);
+        if (armed) send(src, '', undefined);
+      };
+      const watch = (node) => {
+        if (node.tagName === 'IMG') { node.complete ? tryImg(node) : node.addEventListener('load', () => tryImg(node)); }
+        else if (node.tagName === 'VIDEO') { tryVideo(node); }
+        if (node.querySelectorAll) {
+          node.querySelectorAll('img').forEach(i => i.complete ? tryImg(i) : i.addEventListener('load', () => tryImg(i)));
+          node.querySelectorAll('video').forEach(tryVideo);
         }
       };
-      setInterval(consider, 2500);
-      setTimeout(consider, 1200);
+      const start = () => {
+        watch(document);            // mark everything currently on the page as seen
+        new MutationObserver((muts) => {
+          for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) watch(n);
+        }).observe(document.documentElement, { childList: true, subtree: true });
+        // Arm after the initial page (and its feed) has loaded.
+        setTimeout(() => { armed = true; }, 3500);
+      };
+      if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
     })();
     """
 
@@ -701,6 +746,9 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
             firstLoaded.insert(id)
             applyZoom(id)
             if id == .gemini, !Self.isSignInURL(webView.url) { onGeminiReady?() }
+            if id == .muse, !Self.isSignInURL(webView.url), ProviderRegistry.shared.customIconURL(.muse) == nil {
+                captureSiteAvatar(for: .muse)
+            }
         }
         focusComposer(in: webView)
         if let id = provider(of: webView) {

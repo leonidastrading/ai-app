@@ -101,6 +101,11 @@ private struct RailProviderSlot: View {
                 }
                 Button("Reload") { webViews.reload(provider.id) }
                 Divider()
+                Button("Set Icon…") { ProviderRegistry.shared.chooseCustomIcon(provider.id) }
+                if ProviderRegistry.shared.customIconURL(provider.id) != nil {
+                    Button("Reset Icon") { ProviderRegistry.shared.resetCustomIcon(provider.id) }
+                }
+                Divider()
                 Button("Move Up") { ProviderRegistry.shared.move(provider.id, by: -1) }
                     .disabled(ProviderRegistry.shared.isFirst(provider.id))
                 Button("Move Down") { ProviderRegistry.shared.move(provider.id, by: 1) }
@@ -208,12 +213,16 @@ private struct RailButton<Icon: View>: View {
 /// on white. A colored letter badge shows while the logo loads.
 struct ProviderIcon: View {
     @ObservedObject private var loader = IconLoader.shared
+    @ObservedObject private var registry = ProviderRegistry.shared
     let provider: Provider
     var size: CGFloat = 40
 
     var body: some View {
         Group {
-            if let name = provider.localIcon, let image = Self.bundled(name) {
+            if registry.iconVersion >= 0, let url = registry.customIconURL(provider.id),
+               let image = NSImage(contentsOf: url) {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFill()
+            } else if let name = provider.localIcon, let image = Self.bundled(name) {
                 ZStack {
                     (provider.iconFill ?? Color.black)
                     Image(nsImage: image).resizable().interpolation(.high).scaledToFill()
