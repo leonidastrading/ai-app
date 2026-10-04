@@ -11,6 +11,7 @@ struct UAIApp: App {
     @StateObject private var webViews: WebViewStore
     @StateObject private var memory: MemoryStore
     @StateObject private var profile = Profile()
+    @StateObject private var notifHistory = NotificationHistory()
     @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
@@ -34,6 +35,7 @@ struct UAIApp: App {
                 .environmentObject(webViews)
                 .environmentObject(memory)
                 .environmentObject(profile)
+                .environmentObject(notifHistory)
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
