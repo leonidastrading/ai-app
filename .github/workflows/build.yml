@@ -1,11 +1,12 @@
 name: Build UAI
 
 on:
-  push:
-    branches: [main, "claude/**"]
-    tags: ["v*"]
-  pull_request:
+  # Build only when you ask (Actions tab → Run workflow) or when you push a
+  # version tag like v0.1.0 — NOT on every commit, to avoid burning macOS
+  # build minutes.
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: write
