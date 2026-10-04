@@ -15,10 +15,12 @@ async function boot() {
   const state = await window.api.getState();
   recents = state.universalRecents || [];
   notifications = state.notifications || [];
+  profile = state.profile || {};
   if (state.rbHidden) document.getElementById("app").classList.add("rb-hidden");
   await loadProviders(state);
   buildRail();
   renderRecents();
+  renderProfile();
   renderRightBar();
   select("__universal__");
   refreshApiKeyStatus();
@@ -154,11 +156,35 @@ function onWebviewMessage(id, e) {
     if (!viewing) {
       unread[id] = (unread[id] || 0) + 1; updateBadges();
       window.api.notify({ title: `${p ? p.name : "AI"} replied`, body: d.preview || "Your answer is ready.", providerId: id });
+      playChime();
     }
   } else if (e.channel === "media") {
     const d = e.args[0] || {};
     window.api.saveMedia({ dataURL: d.dataURL, name: d.name, role: d.role, providerName: p ? p.name : "Other" });
+  } else if (e.channel === "profile") {
+    const d = e.args[0] || {};
+    if (d && (d.name || d.avatar)) setProfile(d);
   }
+}
+
+// -------------------------------------------------------------- profile
+let profile = {};
+function setProfile(p) {
+  // Keep the best info we've seen (don't overwrite a real name with blank).
+  const merged = { name: p.name || profile.name || "", avatar: p.avatar || profile.avatar || "" };
+  if (merged.name === profile.name && merged.avatar === profile.avatar) return;
+  profile = merged;
+  window.api.setState({ profile });
+  renderProfile();
+}
+function renderProfile() {
+  const el = document.getElementById("profile");
+  if (!el) return;
+  if (!profile.name && !profile.avatar) { el.innerHTML = ""; el.style.display = "none"; return; }
+  el.style.display = "flex";
+  el.innerHTML =
+    (profile.avatar ? `<img src="${escapeAttr(profile.avatar)}" alt="" referrerpolicy="no-referrer"/>` : `<span class="pf-dot"></span>`) +
+    `<span class="pf-name">${escapeHtml(profile.name || "Signed in")}</span>`;
 }
 
 function deliver(id, text) {
@@ -255,6 +281,33 @@ function localRoute(prompt) {
     if (n > score) { score = n; best = p; }
   }
   return { provider: best ? best.id : "claude", reason: "best match", local: true };
+}
+
+// Enter sends the prompt; Shift+Enter makes a new line.
+document.getElementById("universal-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    document.getElementById("universal-form").requestSubmit();
+  }
+});
+
+// A short chime for replies — works even when Windows mutes toast sounds.
+let audioCtx = null;
+function playChime() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    [880, 1320].forEach((freq, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = freq;
+      o.connect(g); g.connect(audioCtx.destination);
+      const t = now + i * 0.12;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.start(t); o.stop(t + 0.24);
+    });
+  } catch (e) {}
 }
 
 function addRecent(text, providerId) {

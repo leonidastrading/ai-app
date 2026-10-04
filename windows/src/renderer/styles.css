@@ -206,3 +206,9 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 .rb-item .rb-title .rb-time { font-weight: 400; color: var(--text-dim); font-size: 11px; }
 .rb-item .rb-body { font-size: 12px; color: var(--text-dim); margin-top: 3px; max-height: 48px; overflow: hidden; }
 .rb-empty { color: var(--text-dim); font-size: 12px; padding: 8px 10px; }
+
+/* profile chip on the Universal page */
+#profile { display: none; align-items: center; gap: 8px; justify-content: center; margin: 18px 0 2px; }
+#profile img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+#profile .pf-dot { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(120deg, var(--pink), var(--aqua)); }
+#profile .pf-name { font-size: 14px; color: var(--text); }
