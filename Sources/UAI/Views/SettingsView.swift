@@ -106,13 +106,20 @@ private struct UniversalSettings: View {
 private struct DataSettings: View {
     @EnvironmentObject private var universal: UniversalStore
     @EnvironmentObject private var memory: MemoryStore
+    @AppStorage(SettingsKey.autoCaptureMedia) private var autoCapture = true
     @State private var confirmSignOut = false
 
     var body: some View {
         Form {
-            Section("Media") {
+            Section {
+                Toggle("Automatically save generated images and videos", isOn: $autoCapture)
                 LabeledContent("Folder", value: Paths.media.path)
                 Button("Show in Finder") { NSWorkspace.shared.open(Paths.media) }
+            } header: {
+                Text("Media")
+            } footer: {
+                Text("When an AI creates an image or video in its reply, UAI saves a copy here so it shows up in Media. Some sites protect their files and can't be saved automatically — download those from the chat and they'll appear too.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("History") {
                 Button("Clear Universal AI history") { universal.clear() }

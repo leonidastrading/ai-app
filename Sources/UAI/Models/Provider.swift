@@ -40,6 +40,8 @@ struct Provider: Identifiable, Hashable {
     var iconFill: Color? = nil
     /// Explicit icon URL when the site's favicon is wrong or missing.
     var iconURLOverride: URL? = nil
+    /// Name of a bundled image (in Resources) to use instead of the favicon.
+    var localIcon: String? = nil
 
     static let builtIn: [Provider] = [
         Provider(
@@ -78,9 +80,9 @@ struct Provider: Identifiable, Hashable {
         Provider(
             id: .muse, name: "Muse", maker: "muse.ai",
             defaultHomeURL: URL(string: "https://muse.ai/")!,
-            conversationPathHints: ["/v/", "/search", "/videos/"],
-            tint: Color(red: 0.93, green: 0.27, blue: 0.47),
-            strengths: "video hosting, AI video search and indexing, transcription, chaptering and captions; finding moments inside your videos",
+            conversationPathHints: ["/chat/", "/c/", "/search"],
+            tint: Color(red: 0.54, green: 0.28, blue: 0.86),
+            strengths: "a personal AI assistant with long-term memory and an avatar: everyday help, reminders, proactive updates, web browsing, and doing multi-step tasks across your connected accounts (email, calendar, shopping, YouTube)",
             hosts: ["muse.ai"]
         ),
         Provider(
@@ -93,14 +95,14 @@ struct Provider: Identifiable, Hashable {
             iconFill: .black
         ),
         Provider(
-            id: .grok, name: "Grok", maker: "X",
+            id: .grok, name: "Grok Bot", maker: "X",
             defaultHomeURL: URL(string: "https://x.com/i/grok")!,
             conversationPathHints: ["conversation="],
             tint: Color(white: 0.05),
             strengths: "the Grok bot inside X: explaining X posts, trends and breaking news on X/Twitter, accounts and threads",
             hosts: ["x.com", "twitter.com"],
             iconFill: .black,
-            iconURLOverride: URL(string: "https://abs.twimg.com/favicons/twitter.3.ico")!
+            localIcon: "GrokBot"
         ),
         Provider(
             id: .vercel, name: "Vercel", maker: "Vercel v0",
@@ -261,4 +263,5 @@ enum SettingsKey {
     static let smartRouting = "universal.smartRouting"
     static let notifications = "notifications.replies"
     static let shareMemory = "memory.share"
+    static let autoCaptureMedia = "media.autoCapture"
 }

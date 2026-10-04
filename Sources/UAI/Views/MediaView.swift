@@ -64,7 +64,7 @@ struct MediaView: View {
         VStack(spacing: 10) {
             Image(systemName: "photo.stack").font(.system(size: 44)).foregroundStyle(.secondary)
             Text("Nothing here yet").font(.title3.bold())
-            Text("Whenever you download an image, video or report from any AI in UAI,\nit's saved to Documents › UAI Media and shows up here.")
+            Text("Images and videos your AIs generate are saved here automatically.\nAnything you download in UAI lands here too — in Documents › UAI Media.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         }

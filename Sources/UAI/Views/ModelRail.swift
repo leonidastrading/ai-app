@@ -213,7 +213,12 @@ struct ProviderIcon: View {
 
     var body: some View {
         Group {
-            if let icon = loader.icon(for: provider.iconURL) {
+            if let name = provider.localIcon, let image = Self.bundled(name) {
+                ZStack {
+                    (provider.iconFill ?? Color.black)
+                    Image(nsImage: image).resizable().interpolation(.high).scaledToFill()
+                }
+            } else if let icon = loader.icon(for: provider.iconURL) {
                 let fill = icon.fill ?? provider.iconFill
                 ZStack {
                     fill ?? Color.white
@@ -230,6 +235,13 @@ struct ProviderIcon: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+    }
+
+    private static func bundled(_ name: String) -> NSImage? {
+        if let url = Bundle.module.url(forResource: name, withExtension: "png") {
+            return NSImage(contentsOf: url)
+        }
+        return NSImage(named: name)
     }
 
     private var letterBadge: some View {

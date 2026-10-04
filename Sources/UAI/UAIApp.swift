@@ -83,6 +83,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         // Asks once for permission to notify you when an AI replies.
         Notifier.shared.start()
+
+        // Paint every window near-black so nothing ever flashes white — the
+        // main window, Settings, and any sign-in popup, now and as they open.
+        paintWindows()
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didUpdateNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.paintWindows()
+            }
+        }
+    }
+
+    private func paintWindows() {
+        for window in NSApp.windows where window.backgroundColor != Theme.windowBackgroundNS {
+            window.backgroundColor = Theme.windowBackgroundNS
+            window.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

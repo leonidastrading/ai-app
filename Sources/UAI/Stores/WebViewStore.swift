@@ -29,10 +29,18 @@ final class WebViewStore: NSObject, ObservableObject {
     private var observers: [NSKeyValueObservation] = []
     private var popups: [NSWindow] = []
     private var indexTimer: Timer?
+    /// Media URLs already saved, so reloads don't duplicate them.
+    private var capturedURLs: Set<String>
+    private static let capturedKey = "media.capturedURLs"
+
+    var autoCapture: Bool {
+        UserDefaults.standard.object(forKey: SettingsKey.autoCaptureMedia) as? Bool ?? true
+    }
 
     init(index: ConversationIndex, media: MediaLibrary) {
         self.index = index
         self.media = media
+        capturedURLs = Set(UserDefaults.standard.stringArray(forKey: Self.capturedKey) ?? [])
         super.init()
         indexTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.indexAll() }
@@ -54,13 +62,19 @@ final class WebViewStore: NSObject, ObservableObject {
         // Consent banners often live in iframes, so this one runs in every frame.
         config.userContentController.addUserScript(WKUserScript(
             source: Self.acceptCookiesScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.mediaCaptureScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
-        webView.underPageBackgroundColor = NSColor(red: 0.09, green: 0.08, blue: 0.17, alpha: 1)
+        // Never flash white: let the dark window show through until the page paints.
+        webView.isOpaque = false
+        webView.underPageBackgroundColor = Theme.windowBackgroundNS
+        webView.wantsLayer = true
+        webView.layer?.backgroundColor = Theme.windowBackgroundNS.cgColor
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
@@ -296,6 +310,60 @@ extension WebViewStore {
         }
     }
 
+    /// Finds images and videos an AI generates in its replies and sends them
+    /// to the app to save into Media, so you don't have to download each one.
+    static let mediaCaptureScript = """
+    (() => {
+      if (window.__uaiMedia) return;
+      window.__uaiMedia = true;
+      const seen = new Set();
+      const skip = /avatar|favicon|logo|icon|emoji|profile|sprite|thumb_small|spinner/i;
+      const grab = async (src, name) => {
+        try {
+          const r = await fetch(src, { credentials: 'include' });
+          if (!r.ok) throw 0;
+          const blob = await r.blob();
+          if (blob.size < 8000 || blob.size > 25000000) {
+            if (blob.size < 8000) return;           // too small = an icon
+            window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name });
+            return;
+          }
+          const dataURL = await new Promise((res, rej) => {
+            const fr = new FileReader();
+            fr.onloadend = () => res(fr.result);
+            fr.onerror = rej;
+            fr.readAsDataURL(blob);
+          });
+          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name, dataURL });
+        } catch (e) {
+          // Cross-origin fetch blocked: hand the URL to the app to try.
+          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name });
+        }
+      };
+      const consider = () => {
+        const scope = document.querySelector('main') || document.body;
+        if (!scope) return;
+        for (const img of scope.querySelectorAll('img')) {
+          const src = img.currentSrc || img.src;
+          if (!src || seen.has(src) || skip.test(src)) continue;
+          if (/^data:image\\/(gif|svg)/.test(src)) continue;
+          const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          if (w < 256 || h < 256) continue;
+          seen.add(src);
+          grab(src, (img.getAttribute('alt') || '').slice(0, 60));
+        }
+        for (const v of scope.querySelectorAll('video')) {
+          const src = v.currentSrc || v.src || (v.querySelector('source') || {}).src;
+          if (!src || seen.has(src) || src.startsWith('blob:')) continue;
+          seen.add(src);
+          window.webkit.messageHandlers.uai.postMessage({ type: 'media', url: src, name: '' });
+        }
+      };
+      setInterval(consider, 3000);
+      setTimeout(consider, 1500);
+    })();
+    """
+
     /// Clicks "Accept all" on cookie banners so they never get in the way.
     /// Generic labels like "OK" or "Got it" are only clicked inside an
     /// element that is clearly a cookie/consent banner.
@@ -380,9 +448,91 @@ extension WebViewStore {
 
 extension WebViewStore: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], body["type"] as? String == "replyDone",
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String,
               let id = provider(of: message.webView) else { return }
-        onReply?(id, body["title"] as? String ?? "", body["preview"] as? String ?? "")
+        switch type {
+        case "replyDone":
+            onReply?(id, body["title"] as? String ?? "", body["preview"] as? String ?? "")
+        case "media":
+            captureMedia(provider: id, body: body)
+        default:
+            break
+        }
+    }
+
+    /// Saves an image or video that an AI generated in the page into the
+    /// Media folder, so it shows up in Media without a manual download.
+    private func captureMedia(provider id: ProviderID, body: [String: Any]) {
+        guard autoCapture, let url = body["url"] as? String, !capturedURLs.contains(url) else { return }
+        capturedURLs.insert(url)
+        // Keep the set bounded so it doesn't grow forever.
+        if capturedURLs.count > 4000 { capturedURLs = Set(capturedURLs.suffix(2000)) }
+        UserDefaults.standard.set(Array(capturedURLs), forKey: Self.capturedKey)
+
+        let folder = Paths.mediaFolder(for: id)
+        let suggested = body["name"] as? String ?? ""
+
+        if let dataURL = body["dataURL"] as? String,
+           let comma = dataURL.firstIndex(of: ","),
+           let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])), !data.isEmpty {
+            let ext = Self.fileExtension(fromDataURL: dataURL, fallbackName: suggested)
+            let name = Self.filename(suggested: suggested, url: url, ext: ext)
+            let dest = Paths.uniqueFile(named: name, in: folder)
+            try? data.write(to: dest)
+            media.reload()
+            lastDownload = dest
+            return
+        }
+
+        // No bytes from the page (cross-origin blocked fetch): try downloading
+        // the URL ourselves with the site's cookies.
+        guard let remote = URL(string: url) else { return }
+        Task { @MainActor in
+            let cookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+            var request = URLRequest(url: remote)
+            request.allHTTPHeaderFields = HTTPCookie.requestHeaderFields(
+                with: cookies.filter { remote.host?.hasSuffix($0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))) == true })
+            guard let (data, response) = try? await URLSession.shared.data(for: request), !data.isEmpty else { return }
+            let ext = Self.fileExtension(fromResponse: response, url: remote, fallbackName: suggested)
+            let name = Self.filename(suggested: suggested, url: url, ext: ext)
+            let dest = Paths.uniqueFile(named: name, in: folder)
+            try? data.write(to: dest)
+            media.reload()
+            lastDownload = dest
+        }
+    }
+
+    private static func filename(suggested: String, url: String, ext: String) -> String {
+        let fromName = suggested.trimmingCharacters(in: .whitespaces)
+        if !fromName.isEmpty, fromName.count <= 80 {
+            return fromName.contains(".") ? fromName : "\(fromName).\(ext)"
+        }
+        let stem = URL(string: url)?.deletingPathExtension().lastPathComponent
+        let base = (stem?.isEmpty == false ? stem! : "generated")
+            .replacingOccurrences(of: "/", with: "-")
+        let stamp = Int(Date().timeIntervalSince1970)
+        return "\(base.prefix(40))-\(stamp).\(ext)"
+    }
+
+    private static func fileExtension(fromDataURL dataURL: String, fallbackName: String) -> String {
+        if let slash = dataURL.range(of: "/"), let semi = dataURL.range(of: ";") ?? dataURL.range(of: ",") {
+            let sub = String(dataURL[slash.upperBound..<semi.lowerBound])
+            if !sub.isEmpty, sub.count <= 5 { return sub == "jpeg" ? "jpg" : sub }
+        }
+        return (fallbackName as NSString).pathExtension.isEmpty ? "png" : (fallbackName as NSString).pathExtension
+    }
+
+    private static func fileExtension(fromResponse response: URLResponse, url: URL, fallbackName: String) -> String {
+        if !url.pathExtension.isEmpty, url.pathExtension.count <= 5 { return url.pathExtension }
+        switch response.mimeType {
+        case "image/png": return "png"
+        case "image/jpeg": return "jpg"
+        case "image/webp": return "webp"
+        case "image/gif": return "gif"
+        case "video/mp4": return "mp4"
+        case "video/webm": return "webm"
+        default: return "png"
+        }
     }
 }
 
@@ -482,6 +632,7 @@ extension WebViewStore: WKUIDelegate {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = Theme.windowBackgroundNS
         let host = navigationAction.request.url?.host ?? ""
         window.title = host.isEmpty ? "Sign in" : "Sign in · " + host
         window.isReleasedWhenClosed = false

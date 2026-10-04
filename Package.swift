@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "UAI",
-            path: "Sources/UAI"
+            path: "Sources/UAI",
+            resources: [.process("Resources")]
         )
     ]
 )

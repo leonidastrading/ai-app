@@ -9,6 +9,10 @@ enum Theme {
     static let aqua = Color(red: 0.45, green: 0.74, blue: 0.80)        // #73BDCC
     static let mesh = Color(red: 0.94, green: 0.94, blue: 0.95)        // #F0F0F2
     static let space = Color(red: 0.08, green: 0.07, blue: 0.20)
+    /// The flat near-black used behind every window and web view, so nothing
+    /// ever flashes white. Matches the user-provided background.
+    static let windowBackground = Color(red: 0.102, green: 0.102, blue: 0.102)   // #1A1A1A
+    static let windowBackgroundNS = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1)
 
     /// Left rail: the midsole fade, indigo into violet into pink, landing on aqua.
     static let rail = LinearGradient(
@@ -25,7 +29,7 @@ enum Theme {
     static let searchField = Color.white.opacity(0.22)
     static let selectionRing = Color.white
     static let accent = pink
-    /// Dark content area, a deep indigo night.
-    static let contentBackground = Color(red: 0.09, green: 0.08, blue: 0.17)   // #17142B
+    /// Content area background (near-black, same as every window).
+    static let contentBackground = windowBackground
     static let card = Color.white.opacity(0.06)
 }
