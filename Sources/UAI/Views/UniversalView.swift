@@ -97,6 +97,7 @@ struct UniversalView: View {
                         .lineLimit(1...8)
                         .focused($composerFocused)
                         .onSubmit(send)
+                        .onChange(of: draft) { absorbFilePaths() }
                         .padding(.vertical, 4)
                     Button(action: send) {
                         Image(systemName: sending ? "hourglass" : "arrow.up")
@@ -203,7 +204,32 @@ struct UniversalView: View {
             app.show(toast: "You can attach up to 6 files at a time.")
             return
         }
+        // Don't double-add the same file (a drag can arrive via two paths).
+        guard !attachments.contains(where: { $0.name == att.name && $0.dataURL == att.dataURL }) else { return }
         attachments.append(att)
+    }
+
+    /// Dragging a file onto a macOS text box drops its PATH as text rather than
+    /// the file itself. Catch that: any line of the draft that is a real file on
+    /// disk becomes a proper attachment, so Claude gets the image — not the path.
+    private func absorbFilePaths() {
+        guard draft.contains("/") else { return }
+        var remaining: [String] = []
+        var absorbed = false
+        for line in draft.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let path = trimmed.hasPrefix("file://") ? (URL(string: trimmed)?.path ?? trimmed) : trimmed
+            if !path.isEmpty, FileManager.default.fileExists(atPath: path) {
+                addAttachment(from: URL(fileURLWithPath: path))
+                absorbed = true
+            } else {
+                remaining.append(line)
+            }
+        }
+        if absorbed {
+            let rest = remaining.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if rest != draft { draft = rest }
+        }
     }
 
     private func routePreview(_ preview: RouteDecision) -> some View {
@@ -245,6 +271,7 @@ struct UniversalView: View {
     }
 
     private func send() {
+        absorbFilePaths()   // in case a just-dropped path hasn't been converted yet
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = attachments
         guard (!prompt.isEmpty || !files.isEmpty), !sending else { return }
