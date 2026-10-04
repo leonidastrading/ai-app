@@ -44,7 +44,7 @@ enum Router {
              keywords: ["website", "web site", "landing page", "web app", "webapp", "frontend", "front-end",
                         "next.js", "nextjs", "react", "tailwind", "dashboard", "prototype", "ui ", "deploy",
                         "build me a site", "portfolio site"]),
-        Rule(providers: [.claudeCode, .claude], reason: "Coding",
+        Rule(providers: [.claude], reason: "Coding",
              keywords: ["code", "coding", "bug", "debug", "function", "compile", "error:", "stack trace",
                         "swift", "python", "javascript", "typescript", "sql", "regex", "api", "refactor",
                         "unit test", "github", "script", "html", "css", "rust", "java "]),

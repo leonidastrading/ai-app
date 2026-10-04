@@ -9,7 +9,6 @@ struct ProviderID: RawRepresentable, Hashable, Codable, Identifiable {
     var id: String { rawValue }
 
     static let claude = ProviderID(rawValue: "claude")
-    static let claudeCode = ProviderID(rawValue: "claudecode")
     static let chatgpt = ProviderID(rawValue: "chatgpt")
     static let gemini = ProviderID(rawValue: "gemini")
     static let deepseek = ProviderID(rawValue: "deepseek")
@@ -47,21 +46,12 @@ struct Provider: Identifiable, Hashable {
 
     static let builtIn: [Provider] = [
         Provider(
-            id: .claude, name: "Claude Chat", maker: "Anthropic",
+            id: .claude, name: "Claude", maker: "Anthropic",
             defaultHomeURL: URL(string: "https://claude.ai/new")!,
             conversationPathHints: ["/chat/"],
             tint: Color(red: 0.85, green: 0.47, blue: 0.34),
             strengths: "coding, debugging, long documents, careful writing and editing, analysis, reports",
             hosts: ["claude.ai", "anthropic.com"],
-            iconFill: Color(red: 0.85, green: 0.47, blue: 0.34)
-        ),
-        Provider(
-            id: .claudeCode, name: "Claude Code", maker: "Anthropic",
-            defaultHomeURL: URL(string: "https://claude.ai/code")!,
-            conversationPathHints: ["/code/"],
-            tint: Color(red: 0.72, green: 0.40, blue: 0.30),
-            strengths: "agentic coding: editing a codebase, running commands, building and fixing software, pull requests, multi-step engineering tasks",
-            hosts: ["claude.ai", "anthropic.com", "code.claude.com"],
             iconFill: Color(red: 0.85, green: 0.47, blue: 0.34)
         ),
         Provider(

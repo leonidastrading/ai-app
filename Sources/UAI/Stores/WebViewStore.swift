@@ -63,7 +63,7 @@ final class WebViewStore: NSObject, ObservableObject {
         if let existing = webViews[id] { return existing }
 
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = Self.dataStore(for: id)
+        config.websiteDataStore = .default()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
@@ -106,15 +106,6 @@ final class WebViewStore: NSObject, ObservableObject {
         DispatchQueue.main.async { self.loaded.insert(id) }
         webView.load(URLRequest(url: Provider.get(id).homeURL))
         return webView
-    }
-
-    /// Most AIs share the default store. Claude Code shares claude.ai with
-    /// Claude Chat, so it gets its own persistent store to keep their sessions
-    /// (logins, recents, view mode) from interfering.
-    private static func dataStore(for id: ProviderID) -> WKWebsiteDataStore {
-        guard id == .claudeCode else { return .default() }
-        let uuid = UUID(uuidString: "C0DE0000-0000-4000-A000-000000000001")!
-        return WKWebsiteDataStore(forIdentifier: uuid)
     }
 
     func existingWebView(for id: ProviderID) -> WKWebView? { webViews[id] }
