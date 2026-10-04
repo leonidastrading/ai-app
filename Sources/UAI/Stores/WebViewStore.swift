@@ -829,10 +829,15 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
 extension WebViewStore: WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Sign-in must happen inside UAI: a login completed in your browser
-        // never reaches UAI. So only ordinary outside links (citations,
-        // sources) go to the default browser, and never while signing in.
-        if let url = navigationAction.request.url, shouldOpenInBrowser(url, from: webView, action: navigationAction) {
+        // Every link an AI opens in a new tab/window goes to the default
+        // browser — EXCEPT sign-in flows, which must stay inside UAI or the
+        // login never reaches it. A popup with no URL yet (about:blank that a
+        // script then points at a login page) is treated as sign-in too.
+        let url = navigationAction.request.url
+        let isSignIn = url == nil || Self.isSignInURL(url) || isIdentityHost(url)
+            || (provider(of: webView).map { needsSignIn.contains($0) } ?? false)
+            || Self.isSignInURL(webView.url)
+        if let url, url.scheme?.hasPrefix("http") == true, !isSignIn {
             NSWorkspace.shared.open(url)
             return nil
         }
@@ -865,18 +870,9 @@ extension WebViewStore: WKUIDelegate {
         "clerk.com", "clerk.dev", "stytch.com", "workos.com", "openai.com", "anthropic.com", "x.ai",
     ]
 
-    private func shouldOpenInBrowser(_ url: URL, from webView: WKWebView, action: WKNavigationAction) -> Bool {
-        guard action.navigationType == .linkActivated, url.scheme?.hasPrefix("http") == true,
-              let host = url.host?.lowercased() else { return false }
-        // Popups opened from sign-in windows, or while an AI is on its sign-in page, stay in UAI.
-        guard let id = provider(of: webView), !needsSignIn.contains(id), !Self.isSignInURL(webView.url) else {
-            return false
-        }
-        if Self.isSignInURL(url) { return false }
-        let matches: (String) -> Bool = { host == $0 || host.hasSuffix("." + $0) }
-        if Self.identityHosts.contains(where: matches) { return false }
-        if Provider.get(id).hosts.contains(where: matches) { return false }
-        return true
+    private func isIdentityHost(_ url: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return Self.identityHosts.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     func webViewDidClose(_ webView: WKWebView) {
