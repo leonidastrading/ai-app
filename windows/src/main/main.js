@@ -154,8 +154,24 @@ app.on("web-contents-created", (_event, contents) => {
   }
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url) && isExternal(url)) { shell.openExternal(url); return { action: "deny" }; }
-    if (!/^https?:|^about:/.test(url)) { shell.openExternal(url); return { action: "deny" }; }
-    return { action: "allow" }; // sign-in popups / own-site tabs stay in-app
+    // mailto:, tel:, etc. → the OS. But NOT blob:/data: — those are usually
+    // downloads or in-app previews (e.g. a PDF an AI generated). Opening them
+    // in a hidden window lets will-download save them into Media; a viewable
+    // one is revealed below.
+    if (!/^https?:|^about:|^blob:|^data:/.test(url)) { shell.openExternal(url); return { action: "deny" }; }
+    const download = /^blob:|^data:/.test(url);
+    return { action: "allow", overrideBrowserWindowOptions: download ? { show: false, width: 820, height: 640, backgroundColor: "#0b0b14" } : {} };
+  });
+  contents.on("did-create-window", (win, details) => {
+    const url = (details && details.url) || "";
+    if (!/^blob:|^data:/.test(url)) return;
+    // If it's a real download, it saves via wireDownloads and the window has
+    // nothing to show. If it's viewable (a PDF preview), reveal it shortly so
+    // you can read/save it. A download that saved first leaves a blank window;
+    // close it after a moment.
+    let navigated = false;
+    win.webContents.once("did-finish-load", () => { navigated = true; try { if (!win.isDestroyed()) win.show(); } catch (e) {} });
+    setTimeout(() => { try { if (!win.isDestroyed() && !navigated) win.close(); } catch (e) {} }, 4000);
   });
   const redirectIfExternal = (e, url) => {
     if (contents.getType() === "webview" && isExternal(url)) {
@@ -168,14 +184,22 @@ app.on("web-contents-created", (_event, contents) => {
 });
 
 // Save downloaded files into the Media folder so they show in the Media tab.
+const wiredSessions = new WeakSet();
 app.on("session-created", (s) => wireDownloads(s));
 function wireDownloads(s) {
+  if (!s || wiredSessions.has(s)) return;   // don't attach twice (saves the file twice)
+  wiredSessions.add(s);
   s.on("will-download", (_e, item) => {
     try {
       fs.mkdirSync(MEDIA_DIR, { recursive: true });
       const name = item.getFilename() || "download";
       item.setSavePath(uniquePath(MEDIA_DIR, name));
-      item.once("done", () => { if (mainWindow) mainWindow.webContents.send("media-changed"); });
+      item.once("done", (_ev, state) => {
+        if (mainWindow) mainWindow.webContents.send("media-changed");
+        if (state === "completed") {
+          try { new Notification({ title: "Saved to Media", body: name }).show(); } catch (e) {}
+        }
+      });
     } catch (e) {}
   });
 }
@@ -358,6 +382,10 @@ function kindOf(ext) {
 
 app.whenReady().then(() => {
   wireDownloads(session.defaultSession);
+  // The AIs run in the persist:uai partition — wire downloads there too, in case
+  // the session-created hook didn't catch it. This is what saves a file you
+  // download from inside an AI (a PDF, an export, etc.) into the Media folder.
+  try { wireDownloads(session.fromPartition("persist:uai")); } catch (e) {}
   createWindow();
   setupUpdates();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

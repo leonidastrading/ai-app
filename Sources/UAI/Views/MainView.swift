@@ -69,6 +69,7 @@ struct MainView: View {
             Notifier.shared.replied(Provider.get(id), title: title, preview: preview)
         }
         webViews.onPrompt = { id, text in recents.add(provider: id, text: text) }
+        webViews.onDownload = { [weak state] name in state?.show(toast: "Saved “\(name)” to Media") }
         Notifier.shared.onOpen = { [weak state] id in state?.go(.provider(id)) }
         // When Gemini is ready and the profile is empty, fill name + photo from Google.
         webViews.onGeminiReady = {

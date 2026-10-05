@@ -27,6 +27,9 @@ final class WebViewStore: NSObject, ObservableObject {
     var onReply: ((ProviderID, String, String) -> Void)?
     /// Called when you send a prompt in any AI: (provider, prompt text).
     var onPrompt: ((ProviderID, String) -> Void)?
+    /// Called when a file you download from an AI finishes saving: (filename).
+    var onDownload: ((String) -> Void)?
+    private var lastDownloadName = "file"
     /// Called when Gemini finishes loading while signed in (for profile import).
     var onGeminiReady: (() -> Void)?
 
@@ -1067,12 +1070,15 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
                   suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         let folder = provider(of: download.webView).map(Paths.mediaFolder(for:)) ?? Paths.media
-        completionHandler(Paths.uniqueFile(named: suggestedFilename, in: folder))
+        let dest = Paths.uniqueFile(named: suggestedFilename, in: folder)
+        lastDownloadName = dest.lastPathComponent
+        completionHandler(dest)
     }
 
     func downloadDidFinish(_ download: WKDownload) {
         media.reload()
         lastDownload = media.items.first?.url
+        onDownload?(lastDownloadName)
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
