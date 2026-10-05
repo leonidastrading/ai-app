@@ -146,6 +146,12 @@ function isExternal(targetUrl) {
 }
 
 app.on("web-contents-created", (_event, contents) => {
+  // Keep an AI's timers (the reply-finished detector) running even when its tab
+  // is hidden, so notifications fire while you're on another AI. The attribute
+  // on the <webview> may not be honored, so enforce it here too.
+  if (contents.getType() === "webview") {
+    try { contents.setBackgroundThrottling(false); } catch (e) {}
+  }
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url) && isExternal(url)) { shell.openExternal(url); return { action: "deny" }; }
     if (!/^https?:|^about:/.test(url)) { shell.openExternal(url); return { action: "deny" }; }

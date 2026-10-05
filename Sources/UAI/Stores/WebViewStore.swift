@@ -725,8 +725,7 @@ extension WebViewStore {
         '[data-message-author-role="assistant"]', '.font-claude-response', '.font-claude-message',
         'model-response', '.model-response-text', '.ds-markdown', '[data-testid="assistant-message"]',
         '[data-testid="markdown"]', '.message-bubble', '.markdown', '.prose',
-        '[class*="assistant" i]', '[class*="message" i]', '[class*="response" i]',
-        '[class*="bubble" i]', '[class*="chat" i]'
+        '[class*="assistant" i]', '[class*="message" i]', '[class*="response" i]', '[class*="bubble" i]'
       ].join(',');
       const measure = () => {
         const els = document.querySelectorAll(replySelector);
@@ -734,7 +733,23 @@ extension WebViewStore {
         for (const e of els) total += (e.textContent || '').length;
         return { total, count: els.length, lastEl: els.length ? els[els.length - 1] : null };
       };
-      let lastTotal = -1, lastCount = -1, growth = 0, genActive = false, lastChange = 0, lastFired = '';
+      let lastFired = '';
+      const fire = (m) => {
+        const preview = ((m.lastEl && m.lastEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
+        if (preview && preview !== lastFired) {
+          lastFired = preview;
+          window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview });
+        }
+        try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
+        setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
+      };
+      // Two independent signals: (1) the Stop button is definitive — when it
+      // goes away the reply is done, fire ~1.5s later regardless of other page
+      // churn; (2) text growth is only a fallback for sites with no recognizable
+      // stop button, and never runs during a stop cycle, so busy pages can't
+      // block the reliable path.
+      let stopBusy = false, stopGone = 0;
+      let lastTotal = -1, lastCount = -1, grow = 0, growActive = false, growSince = 0;
       setInterval(() => {
         const now = Date.now();
         const stop = [...document.querySelectorAll(stopSelector)].find(b => {
@@ -742,25 +757,28 @@ extension WebViewStore {
           return b.offsetParent !== null && !label.includes('record') && !label.includes('dictat');
         });
         const m = measure();
-        if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; } // prime baseline
-        const grew = m.total > lastTotal || m.count > lastCount;
-        if (stop) { genActive = true; lastChange = now; growth = 0; }
-        else if (grew) { growth++; lastChange = now; if (growth >= 2) genActive = true; }
-        else { growth = 0; }
-        lastTotal = m.total; lastCount = m.count;
 
-        // Finished: was generating, no Stop button now, and text stable for 2.5s.
-        if (genActive && !stop && now - lastChange > 2500) {
-          genActive = false; growth = 0;
-          const preview = ((m.lastEl && m.lastEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
-          if (preview && preview !== lastFired) {
-            lastFired = preview;
-            window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview });
+        if (stop) { stopBusy = true; stopGone = 0; }
+        else if (stopBusy) {
+          if (!stopGone) stopGone = now;
+          if (now - stopGone > 1500) {
+            stopBusy = false; stopGone = 0; grow = 0; growActive = false;
+            lastTotal = m.total; lastCount = m.count;
+            fire(m);
+            return;
           }
-          // A reply may include a generated image/video — scan now and shortly after.
-          try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
-          setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
         }
+
+        if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
+        if (!stop && !stopBusy) {
+          const grew = m.total > lastTotal || m.count > lastCount;
+          if (grew) { grow++; growSince = now; if (grow >= 3) growActive = true; }
+          else grow = 0;
+          if (growActive && now - growSince > 3000) { growActive = false; grow = 0; fire(m); }
+        } else {
+          grow = 0; growActive = false;
+        }
+        lastTotal = m.total; lastCount = m.count;
       }, 700);
     })();
     """
