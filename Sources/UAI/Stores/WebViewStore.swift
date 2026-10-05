@@ -246,20 +246,56 @@ final class WebViewStore: NSObject, ObservableObject {
             try? await Task.sleep(for: .milliseconds(250))
         }
 
-        // Never auto-send while files are still uploading — the AI needs a
-        // moment to read the dropped files before the message goes out.
+        // Images are forwarded by pasting them from the system pasteboard (every
+        // major AI accepts a pasted image — the file-input/drop trick doesn't
+        // work on sites like Gemini). Other files still go via the composer.
+        let images = attachments.filter(\.isImage)
+        let others = attachments.filter { !$0.isImage }
+
+        // Never auto-send while anything is attached — the AI needs a moment to
+        // read the files before the message goes out.
         let effectiveAutoSend = autoSend && attachments.isEmpty
         let script = Self.deliverScript(prompt: prompt, autoSend: effectiveAutoSend,
-                                        replace: newChat, attachments: attachments)
+                                        replace: newChat, attachments: others)
+        var delivered: DeliveryResult = .failed
         for _ in 0..<(newChat ? 30 : 4) {
             let result = await evaluate(script, in: webView)
-            switch result {
-            case "sent": return .sent
-            case "inserted": return .inserted
-            default: try? await Task.sleep(for: .milliseconds(500))
-            }
+            if result == "sent" { delivered = .sent; break }
+            if result == "inserted" { delivered = .inserted; break }
+            try? await Task.sleep(for: .milliseconds(500))
         }
-        return .failed
+        if delivered != .failed, !images.isEmpty {
+            await pasteImages(images, into: webView)
+        }
+        return delivered
+    }
+
+    /// Writes each image to the pasteboard and pastes it into the AI's composer.
+    private func pasteImages(_ images: [Attachment], into webView: WKWebView) async {
+        let focusScript = """
+        (() => {
+          const v = el => { const r = el.getBoundingClientRect(); return r.width > 80 && r.height > 12 && el.offsetParent !== null; };
+          const b = [...document.querySelectorAll('textarea, [contenteditable="true"], div[role="textbox"]')].filter(v);
+          if (!b.length) return false;
+          b.sort((x, y) => y.getBoundingClientRect().bottom - x.getBoundingClientRect().bottom);
+          b[0].focus();
+          return true;
+        })()
+        """
+        for att in images {
+            guard let comma = att.dataURL.firstIndex(of: ","),
+                  let data = Data(base64Encoded: String(att.dataURL[att.dataURL.index(after: comma)...])),
+                  let image = NSImage(data: data) else { continue }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
+            _ = await evaluate(focusScript, in: webView)
+            try? await Task.sleep(for: .milliseconds(200))
+            webView.window?.makeFirstResponder(webView)
+            // Route a paste: down the responder chain to the web view, which
+            // inserts the pasteboard image into the focused composer.
+            NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+            try? await Task.sleep(for: .milliseconds(1000))   // let the upload register
+        }
     }
 
     private struct FilePayload: Encodable { let name: String; let mime: String; let dataURL: String }
