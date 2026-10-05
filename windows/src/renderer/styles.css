@@ -25,7 +25,7 @@ body {
 button { font: inherit; color: var(--text); background: transparent; border: none; cursor: pointer; }
 button:focus-visible { outline: 2px solid var(--indigo); }
 
-#app { display: flex; height: 100vh; }
+#app { display: flex; height: 100vh; position: relative; }
 
 /* ---- rail ---- */
 #rail {
@@ -173,9 +173,14 @@ dialog menu button { padding: 8px 16px; border-radius: 8px; background: var(--bg
 dialog menu #add-ok { background: var(--indigo); color: #fff; }
 
 /* ---- right activity bar (notifications + suggestions) ---- */
+/* Floats over the web-view area (below the top bar) instead of shrinking it —
+   so sites like Superscale keep their full desktop width and don't drop to a
+   mobile layout. The top bar (and its hide button) stay clickable above it. */
 #rightbar {
-  width: 280px; flex-shrink: 0; background: var(--bg-rail); border-left: 1px solid var(--border);
+  position: absolute; top: 52px; right: 0; bottom: 0; z-index: 50;
+  width: 280px; background: var(--bg-rail); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
 }
 #app.rb-hidden #rightbar { display: none; }
 .rb-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
