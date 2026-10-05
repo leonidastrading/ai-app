@@ -1,13 +1,11 @@
 // Firebase project config for UAI sign-in + sync.
-//
-// Fill these in from your Firebase project:
-//   Firebase console -> Project settings (gear) -> General -> "Your apps" ->
-//   Web app -> SDK setup and configuration -> "Config".
 // These values are PUBLIC (safe to commit); security comes from Firestore rules.
-// Until real values are set, the app runs without sign-in (launcher only).
 window.UAI_FIREBASE = {
-  apiKey: "PASTE_API_KEY",
-  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_PROJECT_ID",
-  appId: "PASTE_APP_ID",
+  apiKey: "AIzaSyCUuFnCC2nFeyiXm-TWhPBbQ9v1PMLPA9k",
+  authDomain: "uai-app-82ddf.firebaseapp.com",
+  projectId: "uai-app-82ddf",
+  storageBucket: "uai-app-82ddf.firebasestorage.app",
+  messagingSenderId: "660814057102",
+  appId: "1:660814057102:web:9a48d493f4f3a6f54443df",
+  measurementId: "G-CT52PKPD0E",
 };
