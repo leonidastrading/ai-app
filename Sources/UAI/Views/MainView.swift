@@ -5,6 +5,7 @@ struct MainView: View {
     @EnvironmentObject private var webViews: WebViewStore
     @EnvironmentObject private var profile: Profile
     @EnvironmentObject private var history: NotificationHistory
+    @EnvironmentObject private var recents: GlobalRecents
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
@@ -67,6 +68,7 @@ struct MainView: View {
             guard state.replyArrived(from: id) else { return }
             Notifier.shared.replied(Provider.get(id), title: title, preview: preview)
         }
+        webViews.onPrompt = { id, text in recents.add(provider: id, text: text) }
         Notifier.shared.onOpen = { [weak state] id in state?.go(.provider(id)) }
         // When Gemini is ready and the profile is empty, fill name + photo from Google.
         webViews.onGeminiReady = {

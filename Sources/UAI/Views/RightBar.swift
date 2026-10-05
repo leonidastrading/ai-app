@@ -6,7 +6,7 @@ struct RightBar: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var history: NotificationHistory
     @EnvironmentObject private var webViews: WebViewStore
-    @EnvironmentObject private var universal: UniversalStore
+    @EnvironmentObject private var recents: GlobalRecents
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,18 +82,18 @@ struct RightBar: View {
             HStack {
                 Label("Recent", systemImage: "clock").font(.caption.bold()).foregroundStyle(.secondary)
                 Spacer()
-                if !universal.history.isEmpty {
-                    Button("Clear") { universal.clear() }.buttonStyle(.borderless).font(.caption)
+                if !recents.items.isEmpty {
+                    Button("Clear") { recents.clear() }.buttonStyle(.borderless).font(.caption)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
 
-            if universal.history.isEmpty {
-                emptyNote("No prompts yet", "Prompts you send through Universal AI show up here.")
+            if recents.items.isEmpty {
+                emptyNote("No prompts yet", "Prompts you send in any AI show up here.")
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(universal.history.prefix(40)) { entry in
+                        ForEach(recents.items.prefix(40)) { entry in
                             Button { app.go(.provider(entry.provider)) } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     ProviderIcon(provider: Provider.get(entry.provider), size: 22)
@@ -104,7 +104,7 @@ struct RightBar: View {
                                             Text(entry.date.formatted(.relative(presentation: .numeric)))
                                                 .font(.caption2).foregroundStyle(.tertiary)
                                         }
-                                        Text(entry.prompt).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                        Text(entry.text).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                                     }
                                 }
                                 .padding(8)

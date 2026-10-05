@@ -25,6 +25,8 @@ final class WebViewStore: NSObject, ObservableObject {
 
     /// Called when an AI finishes writing a reply: (provider, page title, preview).
     var onReply: ((ProviderID, String, String) -> Void)?
+    /// Called when you send a prompt in any AI: (provider, prompt text).
+    var onPrompt: ((ProviderID, String) -> Void)?
     /// Called when Gemini finishes loading while signed in (for profile import).
     var onGeminiReady: (() -> Void)?
 
@@ -80,6 +82,9 @@ final class WebViewStore: NSObject, ObservableObject {
             source: Self.acceptCookiesScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         config.userContentController.addUserScript(WKUserScript(
             source: Self.mediaCaptureScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // Capture prompts you send in any AI, for the right bar's Recent list.
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.captureSendsScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         // Turn off autocorrect suggestions in the AIs' own text boxes, keeping
         // spellcheck (the red underline) on. Runs in every frame.
         config.userContentController.addUserScript(WKUserScript(
@@ -596,6 +601,30 @@ extension WebViewStore {
     })();
     """
 
+    /// Reports the prompt you send in any AI (Enter in the composer, or a click
+    /// on a Send/Submit button) so the right bar can list recent prompts.
+    static let captureSendsScript = """
+    (() => {
+      if (window.__uaiCaptureSends) return;
+      window.__uaiCaptureSends = true;
+      const textOf = (el) => (el ? (el.value || el.innerText || '').trim() : '');
+      const isBox = (el) => el && (el.tagName === 'TEXTAREA' || el.isContentEditable || (el.getAttribute && el.getAttribute('role') === 'textbox'));
+      const report = (text) => { if (text && text.length <= 20000) window.webkit.messageHandlers.uai.postMessage({ type: 'prompt', text }); };
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && isBox(document.activeElement)) report(textOf(document.activeElement));
+      }, true);
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest && e.target.closest('button,[role="button"]');
+        if (!btn) return;
+        const label = ((btn.getAttribute('aria-label') || '') + ' ' + (btn.title || '') + ' ' + (btn.textContent || '')).toLowerCase();
+        if (/\\bsend\\b|submit/.test(label)) {
+          const box = [...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].find((b) => textOf(b));
+          report(textOf(box));
+        }
+      }, true);
+    })();
+    """
+
     /// Sets autocorrect="off" (WebKit honors it) on every editable field so
     /// the OS stops popping word suggestions, while leaving spellcheck on.
     static let noAutocorrectScript = """
@@ -746,6 +775,8 @@ extension WebViewStore: WKScriptMessageHandler {
             onReply?(id, body["title"] as? String ?? "", body["preview"] as? String ?? "")
         case "media":
             captureMedia(provider: id, body: body)
+        case "prompt":
+            if let text = body["text"] as? String { onPrompt?(id, text) }
         default:
             break
         }

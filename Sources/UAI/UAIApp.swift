@@ -13,6 +13,7 @@ struct UAIApp: App {
     @StateObject private var profile = Profile()
     @StateObject private var notifHistory = NotificationHistory()
     @StateObject private var updater = Updater()
+    @StateObject private var recents = GlobalRecents()
     @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
@@ -37,6 +38,7 @@ struct UAIApp: App {
                 .environmentObject(memory)
                 .environmentObject(profile)
                 .environmentObject(notifHistory)
+                .environmentObject(recents)
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
@@ -81,6 +83,10 @@ struct UAIApp: App {
                 }
                 Divider()
                 Button("Add AI…") { app.showAddAI = true }
+                Button("Send My Working Rules to Claude") {
+                    app.go(.provider(.claude))
+                    Task { _ = await webViews.deliver(ClaudeRules.message, to: .claude, autoSend: true) }
+                }
             }
         }
 

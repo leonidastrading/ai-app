@@ -250,11 +250,13 @@ const PREFILL = {
   vercel: (q) => `https://v0.app/?q=${encodeURIComponent(q)}`,
 };
 
-function deliver(id, text, files) {
+function deliver(id, text, files, forceInject) {
   files = files || [];
   // With files attached we must type into the composer and drop the files in,
-  // so skip the URL-prefill path (a URL can't carry an upload).
-  if (!files.length && PREFILL[id]) {
+  // so skip the URL-prefill path (a URL can't carry an upload). forceInject does
+  // the same for long messages (e.g. the Claude working rules) that don't belong
+  // in a URL.
+  if (!forceInject && !files.length && PREFILL[id]) {
     const url = PREFILL[id](text);
     const existing = webviews[id];
     if (!existing) { ensureWebview(id, url); }
@@ -774,6 +776,32 @@ reconnectDialog.addEventListener("close", () => {
   // Open the link inside THIS AI's window so the sign-in completes in-session.
   const wv = ensureWebview(current);
   if (wv) { try { wv.loadURL(url); } catch (e) { wv.setAttribute("src", url); } select(current); }
+};
+
+// -------------------------------------------------------------- claude working rules
+const CLAUDE_RULES = `Please keep these working rules in mind for all of our conversations:
+
+# Working rules
+
+- No human reads this file. Optimize it for your own adherence, not readability.
+- If my request is ambiguous, ask one clarifying question, then proceed with your best judgment. Only stop to ask when a wrong guess would be expensive to undo (API shape, data model, deleting things). For cheap choices (filenames, naming), decide and mention it.
+- Don't change anything I didn't ask you to change. Before editing, name the smallest file/function you plan to touch and why.
+- Before writing a fix, state the diagnosis in one sentence and confirm the root cause with evidence (log, payload, DB row, output). Don't build on an assumed premise.
+- Never report a check as passing unless it ran as its own command and you read the exit code directly, not through a pipe into grep or tail.
+- Separate what you measured directly from what you inferred from logs, dashboards, or notes. Mark inferred claims as "probably."
+- After two failed attempts, stop and tell me what you've ruled out and what's blocking you, instead of trying a third time.
+- Don't apologize. Fix it, tell me what changed, and if there was a clear reason for the mistake, say what it was.
+- Don't use reasoning for things a script or tool can do deterministically.
+- Preplan your tool calls and batch independent ones together; wait for all to return before reading any.
+- When reporting status, be extremely concise. Sacrifice grammar for concision.
+- When updating this file, replace outdated rules instead of adding new ones next to them.`;
+document.getElementById("claude-rules-send").onclick = () => {
+  const status = document.getElementById("claude-rules-status");
+  if (!allKnown.some((p) => p.id === "claude")) { status.textContent = "Claude isn't in your AIs."; return; }
+  select("claude");
+  deliver("claude", CLAUDE_RULES, [], true);   // forceInject: don't use URL prefill
+  status.textContent = "Sent to Claude.";
+  setTimeout(() => { status.textContent = ""; }, 4000);
 };
 
 // -------------------------------------------------------------- universal rail btn
