@@ -234,7 +234,7 @@ final class AuthStore: ObservableObject {
 
             let lock = NSLock()
             var done = false
-            func finish(_ result: Result<(String, UInt16), Error>) {
+            @Sendable func finish(_ result: Result<(String, UInt16), Error>) {
                 lock.lock(); defer { lock.unlock() }
                 if done { return }; done = true
                 listener.cancel()
@@ -289,7 +289,7 @@ final class AuthStore: ObservableObject {
     }
 
     /// Parse the authorization code (or error) from the first line of the HTTP request.
-    private static func parseCode(_ request: String, expectedState: String) -> (code: String?, error: String?) {
+    private nonisolated static func parseCode(_ request: String, expectedState: String) -> (code: String?, error: String?) {
         guard let firstLine = request.split(separator: "\r\n").first,
               let path = firstLine.split(separator: " ").dropFirst().first,
               let comps = URLComponents(string: "http://127.0.0.1\(path)") else {
@@ -305,28 +305,28 @@ final class AuthStore: ObservableObject {
 
     // MARK: - utils
 
-    private static func form(_ dict: [String: String]) -> String {
+    private nonisolated static func form(_ dict: [String: String]) -> String {
         dict.map { key, val in
             let k = key.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? key
             let v = val.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? val
             return "\(k)=\(v)"
         }.joined(separator: "&")
     }
-    private static func randomURLSafe(_ n: Int) -> String {
+    private nonisolated static func randomURLSafe(_ n: Int) -> String {
         var bytes = [UInt8](repeating: 0, count: n)
         _ = SecRandomCopyBytes(kSecRandomDefault, n, &bytes)
         return base64URL(Data(bytes))
     }
-    private static func codeChallenge(for verifier: String) -> String {
+    private nonisolated static func codeChallenge(for verifier: String) -> String {
         base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
     }
-    private static func base64URL(_ data: Data) -> String {
+    private nonisolated static func base64URL(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
-    private static func err(_ msg: String) -> NSError {
+    private nonisolated static func err(_ msg: String) -> NSError {
         NSError(domain: "UAI.Auth", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
     }
 }
