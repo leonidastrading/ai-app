@@ -4,7 +4,10 @@ const BUILTIN = window.UAI_PROVIDERS;
 const HEURISTICS = window.UAI_HEURISTICS;
 
 function custom() { try { return JSON.parse(localStorage.getItem("uai.custom") || "[]"); } catch (e) { return []; } }
-function saveCustom(list) { localStorage.setItem("uai.custom", JSON.stringify(list)); }
+function saveCustom(list) {
+  localStorage.setItem("uai.custom", JSON.stringify(list));
+  try { window.UAI_sync && window.UAI_sync.push(); } catch (e) {}   // sync to the cloud
+}
 function allProviders() {
   return BUILTIN.concat(custom().map((c) => ({
     id: c.id, name: c.name, maker: hostOf(c.url), home: c.url, tint: "#8a6ddc", custom: true,
@@ -128,3 +131,6 @@ document.getElementById("note").innerHTML =
   "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab with your question pre-filled where the AI supports it (Claude, ChatGPT, xAI, v0). For the rest — and if a link opens the AI’s desktop app, which drops the pre-fill — your prompt is copied to the clipboard: just press ⌘/Ctrl+V. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
 
 renderGrid();
+
+// Let the sync layer refresh the UI when cloud data arrives.
+window.UAI_rerender = function () { renderGrid(); try { renderCustomList(); } catch (e) {} };
