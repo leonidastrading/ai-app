@@ -690,17 +690,20 @@ extension WebViewStore {
         '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]',
         'button[aria-label*="generating" i]', '[data-testid="stop-button"]'
       ].join(',');
+      // Known containers first, then broad class-name conventions so sites we
+      // don't special-case (e.g. Muse) are still covered.
       const replySelector = [
         '[data-message-author-role="assistant"]', '.font-claude-response', '.font-claude-message',
         'model-response', '.model-response-text', '.ds-markdown', '[data-testid="assistant-message"]',
-        '[data-testid="markdown"]', '.message-bubble', '.markdown', '.prose'
+        '[data-testid="markdown"]', '.message-bubble', '.markdown', '.prose',
+        '[class*="assistant" i]', '[class*="message" i]', '[class*="response" i]',
+        '[class*="bubble" i]', '[class*="chat" i]'
       ].join(',');
       const measure = () => {
         const els = document.querySelectorAll(replySelector);
-        let total = 0;
-        for (const e of els) total += (e.innerText || '').length;
-        const last = els.length ? (els[els.length - 1].innerText || '') : '';
-        return { total, count: els.length, last };
+        let total = 0;                       // textContent: cheap, no reflow
+        for (const e of els) total += (e.textContent || '').length;
+        return { total, count: els.length, lastEl: els.length ? els[els.length - 1] : null };
       };
       let lastTotal = -1, lastCount = -1, growth = 0, genActive = false, lastChange = 0, lastFired = '';
       setInterval(() => {
@@ -720,7 +723,7 @@ extension WebViewStore {
         // Finished: was generating, no Stop button now, and text stable for 2.5s.
         if (genActive && !stop && now - lastChange > 2500) {
           genActive = false; growth = 0;
-          const preview = (m.last || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
+          const preview = ((m.lastEl && m.lastEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
           if (preview && preview !== lastFired) {
             lastFired = preview;
             window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview });
