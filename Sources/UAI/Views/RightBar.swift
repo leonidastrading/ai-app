@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// The right-hand panel: your notifications history on the top half and
-/// suggestions on the bottom half. Fold it away with the chevron up top.
+/// The right-hand panel, split into equal thirds: notifications, your recent
+/// Universal AI prompts, and suggestions. Fold it away with the chevron up top.
 struct RightBar: View {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var history: NotificationHistory
     @EnvironmentObject private var webViews: WebViewStore
+    @EnvironmentObject private var universal: UniversalStore
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,10 +15,13 @@ struct RightBar: View {
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     notifications
-                        .frame(height: geo.size.height / 2)
+                        .frame(height: geo.size.height / 3)
+                    Divider()
+                    recentPrompts
+                        .frame(height: geo.size.height / 3)
                     Divider()
                     suggestions
-                        .frame(height: geo.size.height / 2)
+                        .frame(height: geo.size.height / 3)
                 }
             }
         }
@@ -71,7 +75,51 @@ struct RightBar: View {
         }
     }
 
-    // MARK: Suggestions (bottom half)
+    // MARK: Recent prompts (middle third)
+
+    private var recentPrompts: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Label("Recent", systemImage: "clock").font(.caption.bold()).foregroundStyle(.secondary)
+                Spacer()
+                if !universal.history.isEmpty {
+                    Button("Clear") { universal.clear() }.buttonStyle(.borderless).font(.caption)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+
+            if universal.history.isEmpty {
+                emptyNote("No prompts yet", "Prompts you send through Universal AI show up here.")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(universal.history.prefix(40)) { entry in
+                            Button { app.go(.provider(entry.provider)) } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    ProviderIcon(provider: Provider.get(entry.provider), size: 22)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack {
+                                            Text(Provider.get(entry.provider).name).font(.caption.bold())
+                                            Spacer()
+                                            Text(entry.date.formatted(.relative(presentation: .numeric)))
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                        Text(entry.prompt).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                    }
+                                }
+                                .padding(8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8).padding(.bottom, 8)
+                }
+            }
+        }
+    }
+
+    // MARK: Suggestions (bottom third)
 
     private struct Suggestion: Identifiable { let id = UUID(); let icon: String; let text: String }
     private let suggestionList: [Suggestion] = [

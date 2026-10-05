@@ -814,18 +814,38 @@ function renderRightBar() {
   nl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => { const n = notifications[+el.dataset.i]; if (n) select(n.providerId); });
 
   // Recent: prompts you've sent across all the AIs. Click to reopen that AI.
-  const sl = document.getElementById("rb-sugg-list");
-  sl.innerHTML = allRecents.length
+  const rl = document.getElementById("rb-recent-list");
+  rl.innerHTML = allRecents.length
     ? allRecents.slice(0, 40).map((r, i) => `<div class="rb-item" data-i="${i}">
         <div class="rb-title"><span>${escapeHtml(r.name || "AI")}</span><span class="rb-time">${timeAgo(r.at)}</span></div>
         <div class="rb-body">${escapeHtml(r.text)}</div></div>`).join("")
     : `<div class="rb-empty">Prompts you send in any AI show up here.</div>`;
-  sl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
+  rl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
     const r = allRecents[+el.dataset.i]; if (!r) return;
     if (r.providerId && !hidden.has(r.providerId)) select(r.providerId);
   });
+
+  // Suggestions: canned starter prompts. Click to drop into Universal AI.
+  const sl = document.getElementById("rb-sugg-list");
+  sl.innerHTML = SUGGESTIONS.map((s, i) => `<div class="rb-item rb-sugg" data-i="${i}">
+      <div class="rb-body">${escapeHtml(s.icon)} ${escapeHtml(s.text)}</div></div>`).join("");
+  sl.querySelectorAll(".rb-item").forEach((el) => el.onclick = () => {
+    const s = SUGGESTIONS[+el.dataset.i]; if (!s) return;
+    select("__universal__");
+    const t = document.getElementById("universal-input");
+    if (t) { t.value = s.text; t.focus(); }
+  });
 }
+const SUGGESTIONS = [
+  { icon: "🖼", text: "Make me an image of…" },
+  { icon: "📈", text: "Summarize today's market news" },
+  { icon: "</>", text: "Write a script to…" },
+  { icon: "✉️", text: "Draft an email about…" },
+  { icon: "🎬", text: "Create a short video of…" },
+  { icon: "🔍", text: "Research and compare…" },
+];
 document.getElementById("rb-clear").onclick = () => { notifications = []; window.api.setState({ notifications }); renderRightBar(); };
+document.getElementById("rb-recent-clear").onclick = () => { allRecents = []; window.api.setState({ allRecents }); renderRightBar(); };
 document.getElementById("btn-rightbar").onclick = () => {
   const app = document.getElementById("app");
   app.classList.toggle("rb-hidden");

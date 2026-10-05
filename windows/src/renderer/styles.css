@@ -179,7 +179,7 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 }
 #app.rb-hidden #rightbar { display: none; }
 .rb-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.rb-section.rb-notifications { border-bottom: 1px solid var(--border); }
+.rb-section:not(:last-child) { border-bottom: 1px solid var(--border); }
 .rb-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim);
