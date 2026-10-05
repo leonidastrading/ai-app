@@ -107,10 +107,14 @@ function renderRecents() {
   for (const r of list.slice(0, 20)) {
     const p = byId(r.providerId);
     const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : "";
+    const atts = Array.isArray(r.attachments) ? r.attachments : [];
+    const thumbs = atts.filter((a) => a && a.dataURL).slice(0, 4).map((a) => `<img class="rr-thumb" src="${a.dataURL}" alt="">`).join("");
+    const nonImg = atts.filter((a) => a && !a.dataURL).length;
+    const attLabel = nonImg ? `<span class="rr-attlabel">📎 ${nonImg} file${nonImg > 1 ? "s" : ""}</span>` : "";
     const meta = [p ? "Routed to " + esc(p.name) : "", r.at ? esc(timeAgo(r.at)) : ""].filter(Boolean).join(" · ");
     const row = document.createElement("button");
     row.className = "recent-row";
-    row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>`;
+    row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>${thumbs ? `<span class="rr-thumbs">${thumbs}</span>` : ""}${attLabel}`;
     if (p) row.onclick = () => openProvider(p, r.text);
     box.appendChild(row);
   }
@@ -137,6 +141,73 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
     status.textContent = "Couldn’t route that. Pick an AI below (your prompt is copied).";
   } finally { btn.disabled = false; }
 });
+
+// ---------------------------------------------------------- attachments + Send to UAI
+let askAttachments = []; // { name, type, dataURL? (thumbnail for images) }
+
+function renderAskAttachments() {
+  const box = document.getElementById("ask-attachments");
+  if (!box) return;
+  if (!askAttachments.length) { box.innerHTML = ""; box.style.display = "none"; return; }
+  box.style.display = "";
+  box.innerHTML = askAttachments.map((a, i) => {
+    const thumb = a.dataURL ? `<img src="${a.dataURL}" alt="">` : `<span class="att-doc">📄</span>`;
+    return `<span class="att-chip">${thumb}<span class="att-name">${esc(a.name)}</span><span class="att-x" data-i="${i}">✕</span></span>`;
+  }).join("");
+  box.querySelectorAll(".att-x").forEach((x) => x.onclick = () => { askAttachments.splice(+x.dataset.i, 1); renderAskAttachments(); });
+}
+
+// Downscale an image to a small JPEG data URL so it stays tiny in the synced blob.
+function imageThumb(file, max = 320, quality = 0.7) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      try { c.getContext("2d").drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url); resolve(c.toDataURL("image/jpeg", quality)); }
+      catch (e) { URL.revokeObjectURL(url); resolve(null); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+async function addAskFiles(fileList) {
+  for (const f of fileList) {
+    if (!f) continue;
+    const att = { name: f.name || "file", type: f.type || "application/octet-stream" };
+    if ((f.type || "").startsWith("image/")) { const t = await imageThumb(f); if (t) att.dataURL = t; }
+    askAttachments.push(att);
+    if (askAttachments.length >= 6) break; // keep it light
+  }
+  renderAskAttachments();
+}
+document.getElementById("attach-btn").onclick = () => document.getElementById("ask-file").click();
+document.getElementById("ask-file").addEventListener("change", (e) => { addAskFiles(e.target.files); e.target.value = ""; });
+document.getElementById("ask").addEventListener("paste", (e) => {
+  const items = (e.clipboardData || {}).items || [];
+  const files = []; for (const it of items) if (it.kind === "file") { const f = it.getAsFile(); if (f) files.push(f); }
+  if (files.length) { e.preventDefault(); addAskFiles(files); }
+});
+
+document.getElementById("send-uai-btn").onclick = () => {
+  const text = document.getElementById("ask").value.trim();
+  if (!text && !askAttachments.length) return;
+  let providerId = null;
+  try { providerId = localRoute(text || "attached file").provider; } catch (e) {}
+  const entry = {
+    id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    text: text || "(attachment)",
+    providerId,
+    at: Date.now(),
+    attachments: askAttachments.slice(),
+  };
+  try { window.UAI_sync && window.UAI_sync.addRecent && window.UAI_sync.addRecent(entry); } catch (e) {}
+  document.getElementById("ask").value = "";
+  askAttachments = []; renderAskAttachments();
+  toast("Sent to UAI — saved to your Recent on every signed-in device");
+};
 
 // settings dialog
 const dlg = document.getElementById("settings");

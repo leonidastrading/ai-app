@@ -15,8 +15,32 @@
 
   function rerender() { try { window.UAI_rerender && window.UAI_rerender(); } catch (e) {} }
 
+  // Merge recent entries: dedupe, newest-first, bounded, and keep image
+  // thumbnails only for the newest few so the synced blob stays small.
+  function mergeRecents(list) {
+    const seen = new Set(); const out = [];
+    for (const r of list) {
+      if (!r || typeof r !== "object") continue;
+      const key = r.id || ((r.providerId || "") + "|" + (r.at || 0) + "|" + String(r.text || "").slice(0, 40));
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(r);
+    }
+    out.sort((a, b) => (b.at || 0) - (a.at || 0));
+    const capped = out.slice(0, 80);
+    capped.forEach((r, i) => {
+      if (i >= 12 && Array.isArray(r.attachments)) r.attachments = r.attachments.map((a) => ({ name: a.name, type: a.type }));
+    });
+    return capped;
+  }
+  // Add an entry to Recent locally (works signed out too; syncs when able).
+  function localAddRecent(entry) {
+    window.UAI_recents = mergeRecents([entry].concat(window.UAI_recents || []));
+    window.UAI_recentsJSON = JSON.stringify(window.UAI_recents);
+    rerender();
+  }
+
   if (!configured || !window.firebase) {
-    window.UAI_sync = { push() {}, configured: false };
+    window.UAI_sync = { push() {}, addRecent: localAddRecent, configured: false };
     return;
   }
 
@@ -26,7 +50,7 @@
     auth = firebase.auth();
     db = firebase.firestore();
   } catch (e) {
-    window.UAI_sync = { push() {}, configured: false };   // don't trap behind a dead gate
+    window.UAI_sync = { push() {}, addRecent: localAddRecent, configured: false };   // don't trap behind a dead gate
     return;
   }
   let docRef = null, applyingRemote = false;
@@ -74,10 +98,12 @@
           if (localStorage.getItem(KEYS[k]) !== next) { localStorage.setItem(KEYS[k], next); changed = true; }
         }
       }
-      // Recent prompts from every app (read-only on the web — shown under "Your AIs").
-      const recents = Array.isArray(blob && blob.recents) ? blob.recents : [];
-      const recentsNext = JSON.stringify(recents);
-      if (window.UAI_recentsJSON !== recentsNext) { window.UAI_recentsJSON = recentsNext; window.UAI_recents = recents; changed = true; }
+      // Recent prompts from every app. Merge remote with anything added locally
+      // (e.g. just "Sent to UAI") so an unrelated snapshot can't drop it.
+      const remoteRecents = Array.isArray(blob && blob.recents) ? blob.recents : [];
+      const mergedRecents = mergeRecents(remoteRecents.concat(window.UAI_recents || []));
+      const recentsNext = JSON.stringify(mergedRecents);
+      if (window.UAI_recentsJSON !== recentsNext) { window.UAI_recentsJSON = recentsNext; window.UAI_recents = mergedRecents; changed = true; }
       if (changed) rerender();
     } catch (e) {} finally { applyingRemote = false; }
   }
@@ -91,7 +117,22 @@
     docRef.set({ data: JSON.stringify(blob), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
       .catch(function () {});
   }
-  window.UAI_sync = { push: push, configured: true };
+
+  // Add an entry to Recent and sync it so it shows on every signed-in device.
+  function addRecent(entry) {
+    localAddRecent(entry);                    // update local UI immediately
+    if (!docRef) return;
+    const blob = Object.assign({}, lastBlob);
+    for (const k in KEYS) {
+      try { const v = JSON.parse(localStorage.getItem(KEYS[k]) || "null"); if (v != null) blob[k] = v; } catch (e) {}
+    }
+    blob.recents = window.UAI_recents;        // the merged list we just computed
+    lastBlob = blob;
+    docRef.set({ data: JSON.stringify(blob), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
+      .catch(function () {});
+  }
+
+  window.UAI_sync = { push: push, addRecent: addRecent, configured: true };
 
   auth.onAuthStateChanged(function (user) {
     if (!user) { document.documentElement.classList.add("signed-out"); docRef = null; return; }

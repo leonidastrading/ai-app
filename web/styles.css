@@ -93,3 +93,21 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #acct-chip 
 .recent-row .rr-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .recent-row .rr-text { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .recent-row .rr-meta { font-size: 12px; color: var(--dim); }
+
+/* Composer actions + attachments */
+.ask-actions { display: flex; align-items: center; gap: 10px; }
+.ask-actions .spacer { flex: 1 1 auto; }
+.ask-actions .ghost { margin-left: 0; }
+#send-uai-btn { font-weight: 600; }
+.ask-attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-attachments:empty { display: none; }
+.att-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px 5px 5px; border-radius: 10px; background: var(--elev); border: 1px solid var(--border); font-size: 12px; }
+.att-chip img { width: 30px; height: 30px; border-radius: 6px; object-fit: cover; }
+.att-chip .att-doc { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; background: var(--elev2); border-radius: 6px; }
+.att-chip .att-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-chip .att-x { cursor: pointer; color: var(--pink); padding: 0 2px; }
+
+/* Thumbnails in the Recent list */
+.recent-row .rr-thumbs { flex: 0 0 auto; display: flex; gap: 4px; margin-left: 8px; }
+.recent-row .rr-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; }
+.recent-row .rr-attlabel { flex: 0 0 auto; margin-left: 8px; font-size: 12px; color: var(--dim); }

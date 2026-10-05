@@ -22,7 +22,14 @@
       <p class="sub">UAI picks the AI best suited to your request and opens it with your question ready to go.</p>
       <form id="ask-form">
         <textarea id="ask" rows="3" placeholder="e.g. “write a Python script to rename files”, “generate an image of a city at night”, “what’s the latest on …”"></textarea>
-        <button type="submit" id="ask-btn">Route it</button>
+        <div id="ask-attachments" class="ask-attachments"></div>
+        <div class="ask-actions">
+          <button type="button" id="attach-btn" class="ghost" title="Attach images or files">📎 Attach</button>
+          <span class="spacer"></span>
+          <button type="button" id="send-uai-btn" class="ghost" title="Save this to your Recent on every signed-in device">Send to UAI</button>
+          <button type="submit" id="ask-btn">Route it</button>
+        </div>
+        <input id="ask-file" type="file" multiple style="display:none" />
       </form>
       <div id="status" class="status"></div>
     </section>
