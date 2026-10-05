@@ -10,13 +10,14 @@ struct WebPane: View {
     let provider: Provider
     let isActive: Bool
     @State private var reconnectLink = ""
+    @State private var showReconnect = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            if webViews.needsSignIn.contains(provider.id) {
-                signInTip
+            if webViews.needsSignIn.contains(provider.id) || showReconnect {
+                reconnectBar
                 Divider()
             }
             WebViewHost(webView: webViews.webView(for: provider.id), isHidden: !isActive)
@@ -51,6 +52,8 @@ struct WebPane: View {
             }
             Spacer()
             chatsMenu
+            Button { showReconnect.toggle() } label: { Image(systemName: "key") }
+                .help("Signed out? Paste a login link to reconnect this AI")
             Button(action: shareMemory) { Label("Memory", systemImage: "brain.head.profile") }
                 .help("Put your shared memory and related chats from your other AIs into this chat's message box")
             Button { webViews.goHome(provider.id) } label: { Label("New chat", systemImage: "square.and.pencil") }
@@ -95,13 +98,20 @@ struct WebPane: View {
         .help("Open one of your \(provider.name) chats")
     }
 
-    private var signInTip: some View {
+    private var reconnectBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "key.fill").foregroundStyle(Theme.indigo)
-                Text("Sign in to \(provider.name) below. You only do this once; UAI keeps you signed in.")
-                    .font(.callout)
+                if webViews.needsSignIn.contains(provider.id) {
+                    Text("Sign in to \(provider.name) below. You only do this once; UAI keeps you signed in.")
+                        .font(.callout)
+                } else {
+                    Text("Signed out of \(provider.name)? Paste the login link it emailed you to finish signing in here.")
+                        .font(.callout)
+                }
                 Spacer()
+                Button { showReconnect = false } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).help("Hide")
             }
             HStack(spacing: 8) {
                 Text("Got a sign-in link by email?").font(.caption).foregroundStyle(.secondary)
@@ -126,6 +136,7 @@ struct WebPane: View {
             return
         }
         reconnectLink = ""
+        showReconnect = false
         webViews.open(url, in: provider.id)
         app.show(toast: "Opening your sign-in link in \(provider.name)…")
     }
