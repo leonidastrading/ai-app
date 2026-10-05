@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("api", {
   clearMedia: () => ipcRenderer.invoke("media:clear"),
   saveMedia: (payload) => ipcRenderer.invoke("media:save", payload),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  writeClipboardImage: (dataURL) => ipcRenderer.invoke("clipboard:writeImage", dataURL),
   onMediaChanged: (cb) => ipcRenderer.on("media-changed", cb),
   onOpenProvider: (cb) => ipcRenderer.on("open-provider", (_e, id) => cb(id)),
   choosePhoto: () => ipcRenderer.invoke("profile:choosePhoto"),

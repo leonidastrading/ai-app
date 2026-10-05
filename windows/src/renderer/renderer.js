@@ -266,21 +266,41 @@ function deliver(id, text, files, forceInject) {
   const wv = ensureWebview(id);
   if (!wv) return;
   try { navigator.clipboard.writeText(text); } catch (e) {}
-  let n = 0;
+  // Images go in by pasting from the real system clipboard (every major AI
+  // accepts a pasted image). Other files use the composer's file <input>/drop.
+  const images = files.filter((f) => (f.type || "").startsWith("image/"));
+  const others = files.filter((f) => !(f.type || "").startsWith("image/"));
+  const autoSend = files.length === 0;   // don't auto-send while anything is attached
+  let n = 0, forwarded = false;
   const tryInject = () => {
-    // Give the composer's file <input> time to appear; only fall back to a
-    // simulated drag-and-drop on the last couple of attempts.
-    wv.executeJavaScript(deliverScript(text, files, n >= 24)).then((ok) => {
-      if (!ok && ++n < 30) setTimeout(tryInject, 500);
+    wv.executeJavaScript(deliverScript(text, others, n >= 24, autoSend)).then((ok) => {
+      if (ok) {
+        if (images.length && !forwarded) { forwarded = true; setTimeout(() => forwardImages(wv, images, 0), 500); }
+      } else if (++n < 30) setTimeout(tryInject, 500);
     }).catch(() => { if (++n < 30) setTimeout(tryInject, 500); });
   };
   if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", () => setTimeout(tryInject, 400), { once: true });
   else setTimeout(tryInject, 400);
 }
 
-function deliverScript(text, files, allowDrop) {
+// Paste attached images into the AI's composer, one at a time, via the real
+// clipboard — the most reliable way to forward an image across AI web apps.
+function forwardImages(wv, images, i) {
+  if (!wv || i >= images.length) return;
+  window.api.writeClipboardImage(images[i].dataURL).then((ok) => {
+    const focusBox = `(() => { const v=el=>{const r=el.getBoundingClientRect();return r.width>80&&r.height>12&&el.offsetParent!==null;}; const b=[...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].filter(v); if(!b.length) return false; b.sort((x,y)=>y.getBoundingClientRect().bottom-x.getBoundingClientRect().bottom); b[0].focus(); return true; })()`;
+    wv.executeJavaScript(focusBox).then(() => {
+      setTimeout(() => {
+        try { wv.focus(); } catch (e) {}
+        try { wv.paste(); } catch (e) {}
+        setTimeout(() => forwardImages(wv, images, i + 1), 1000);  // let the upload register
+      }, 250);
+    }).catch(() => {});
+  });
+}
+
+function deliverScript(text, files, allowDrop, autoSend) {
   files = files || [];
-  const autoSend = files.length === 0;   // don't auto-send when files are attached
   return `(() => {
     const t = ${JSON.stringify(text)};
     const files = ${JSON.stringify(files)};
@@ -321,7 +341,7 @@ function deliverScript(text, files, allowDrop) {
         el.textContent = t; el.dispatchEvent(new InputEvent('input', { bubbles: true }));
       }
     }
-    if (${autoSend}) setTimeout(() => {
+    if (${autoSend ? "true" : "false"}) setTimeout(() => {
       el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
       el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
     }, 500);

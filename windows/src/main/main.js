@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Notification, session, safeStorage, nativeImage, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, Notification, session, safeStorage, nativeImage, dialog, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -269,6 +269,18 @@ ipcMain.handle("media:save", (_e, { dataURL, name, role, providerName }) => {
 });
 
 ipcMain.handle("open-external", (_e, url) => { if (url) shell.openExternal(url); });
+
+// Put an image on the system clipboard so it can be pasted into an AI's
+// composer (the most reliable way to forward an attached image — ChatGPT,
+// Gemini, Claude and Grok all accept pasted images).
+ipcMain.handle("clipboard:writeImage", (_e, dataURL) => {
+  try {
+    const img = nativeImage.createFromDataURL(dataURL);
+    if (img.isEmpty()) return false;
+    clipboard.writeImage(img);
+    return true;
+  } catch (e) { return false; }
+});
 
 // Let the user pick a profile photo; returns a small data URL.
 ipcMain.handle("profile:choosePhoto", async () => {
