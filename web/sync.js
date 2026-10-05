@@ -20,9 +20,17 @@
     return;
   }
 
-  firebase.initializeApp(cfg);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
+  let auth, db;
+  try {
+    firebase.initializeApp(cfg);
+    auth = firebase.auth();
+    db = firebase.firestore();
+  } catch (e) {
+    // If Firebase can't start, don't trap the user behind a dead gate — run as
+    // a plain launcher.
+    window.UAI_sync = { push() {}, configured: false };
+    return;
+  }
   let docRef = null;
   let applyingRemote = false;   // guard so remote writes don't echo back
 
@@ -69,7 +77,9 @@
       let changed = false;
       for (const key in SYNCED) {
         const field = SYNCED[key];
-        if (data && Object.prototype.hasOwnProperty.call(data, field)) {
+        // Only apply real values — never overwrite local with a null/undefined
+        // remote field (that used to blank out the AI list).
+        if (data && data[field] != null) {
           const next = JSON.stringify(data[field]);
           if (localStorage.getItem(key) !== next) { localStorage.setItem(key, next); changed = true; }
         }
@@ -82,7 +92,10 @@
     if (!docRef || applyingRemote) return;
     const payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     for (const key in SYNCED) {
-      try { payload[SYNCED[key]] = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { payload[SYNCED[key]] = null; }
+      try {
+        const v = JSON.parse(localStorage.getItem(key) || "null");
+        if (v != null) payload[SYNCED[key]] = v;   // never write null (it blanked the list)
+      } catch (e) {}
     }
     docRef.set(payload, { merge: true }).catch(function () {});
   }

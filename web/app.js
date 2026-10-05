@@ -3,7 +3,10 @@
 const BUILTIN = window.UAI_PROVIDERS;
 const HEURISTICS = window.UAI_HEURISTICS;
 
-function custom() { try { return JSON.parse(localStorage.getItem("uai.custom") || "[]"); } catch (e) { return []; } }
+function custom() {
+  try { const v = JSON.parse(localStorage.getItem("uai.custom") || "[]"); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
 function saveCustom(list) {
   localStorage.setItem("uai.custom", JSON.stringify(list));
   try { window.UAI_sync && window.UAI_sync.push(); } catch (e) {}   // sync to the cloud
