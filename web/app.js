@@ -79,6 +79,41 @@ function renderGrid() {
     el.onclick = () => openProvider(p, document.getElementById("ask").value.trim() || null);
     grid.appendChild(el);
   }
+  renderRecents();
+}
+
+// Recent prompts from all your apps (synced). Read-only here — click one to
+// reopen that AI with the prompt.
+function timeAgo(ms) {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  const d = Math.floor(h / 24);
+  if (d < 7) return d + "d ago";
+  return new Date(ms).toLocaleDateString();
+}
+function renderRecents() {
+  const wrap = document.getElementById("recents-wrap");
+  const box = document.getElementById("recents");
+  if (!wrap || !box) return;
+  const list = Array.isArray(window.UAI_recents) ? window.UAI_recents : [];
+  if (!list.length) { wrap.style.display = "none"; box.innerHTML = ""; return; }
+  wrap.style.display = "";
+  box.innerHTML = "";
+  for (const r of list.slice(0, 20)) {
+    const p = byId(r.providerId);
+    const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : "";
+    const meta = [p ? "Routed to " + esc(p.name) : "", r.at ? esc(timeAgo(r.at)) : ""].filter(Boolean).join(" · ");
+    const row = document.createElement("button");
+    row.className = "recent-row";
+    row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>`;
+    if (p) row.onclick = () => openProvider(p, r.text);
+    box.appendChild(row);
+  }
 }
 
 document.getElementById("ask-form").addEventListener("submit", async (e) => {

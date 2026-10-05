@@ -622,7 +622,7 @@ function renderRecents() {
   const box = document.getElementById("universal-recents");
   if (!recents.length) { box.innerHTML = ""; return; }
   box.innerHTML = `<div class="sr-ai" style="margin-bottom:6px">Recent</div>` +
-    recents.map((r, i) => `<div class="recent" data-i="${i}">${escapeHtml(r.text)}</div>`).join("");
+    recents.map((r, i) => `<div class="recent" data-i="${i}"><span class="recent-text">${escapeHtml(r.text)}</span>${r.at ? `<span class="recent-time">${escapeHtml(fmtWhen(r.at))}</span>` : ""}</div>`).join("");
   box.querySelectorAll(".recent").forEach((el) => {
     el.onclick = () => { const r = recents[+el.dataset.i]; document.getElementById("universal-input").value = r.text; };
   });
@@ -964,6 +964,12 @@ function timeAgo(ts) {
   if (s < 3600) return Math.round(s / 60) + "m";
   if (s < 86400) return Math.round(s / 3600) + "h";
   return Math.round(s / 86400) + "d";
+}
+// Absolute, readable timestamp (e.g. "Oct 5, 7:02 PM") for the Recent list.
+function fmtWhen(ts) {
+  try {
+    return new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  } catch (e) { return ""; }
 }
 function renderRightBar() {
   const nl = document.getElementById("rb-notif-list");

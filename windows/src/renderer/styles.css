@@ -124,8 +124,10 @@ webview.show { display: flex; }
 }
 #universal-status { margin-top: 14px; color: var(--text-dim); min-height: 20px; }
 #universal-recents { margin-top: 24px; text-align: left; }
-.recent { padding: 8px 10px; border-radius: 8px; color: var(--text-dim); cursor: pointer; font-size: 13px; }
+.recent { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text-dim); cursor: pointer; font-size: 13px; }
 .recent:hover { background: var(--bg-elev); color: var(--text); }
+.recent .recent-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent .recent-time { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); opacity: 0.8; }
 
 /* media */
 .media-head { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--border); }

@@ -74,6 +74,10 @@
           if (localStorage.getItem(KEYS[k]) !== next) { localStorage.setItem(KEYS[k], next); changed = true; }
         }
       }
+      // Recent prompts from every app (read-only on the web — shown under "Your AIs").
+      const recents = Array.isArray(blob && blob.recents) ? blob.recents : [];
+      const recentsNext = JSON.stringify(recents);
+      if (window.UAI_recentsJSON !== recentsNext) { window.UAI_recentsJSON = recentsNext; window.UAI_recents = recents; changed = true; }
       if (changed) rerender();
     } catch (e) {} finally { applyingRemote = false; }
   }
