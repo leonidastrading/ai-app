@@ -26,6 +26,7 @@
           <button id="back" title="Back">‹</button>
           <button id="forward" title="Forward">›</button>
           <button id="reload" title="Reload">⟳</button>
+          <button id="reconnect" title="Signed out? Paste a login link to reconnect this AI" style="display:none">🔑</button>
         </div>
         <div class="search-wrap">
           <input id="search" type="search" placeholder="Search your AIs, or ask Universal AI…" autocomplete="off" />
@@ -162,6 +163,19 @@
       <menu>
         <button value="cancel">Cancel</button>
         <button value="ok" id="add-ok">Add</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Reconnect dialog: paste a sign-in / magic link to finish logging in -->
+  <dialog id="reconnect-dialog">
+    <form method="dialog">
+      <h3>Reconnect <span id="reconnect-ai"></span></h3>
+      <p class="hint">Signed out? Paste the login or magic link you got by email. UAI opens it inside this AI so your sign-in stays here.</p>
+      <label>Login link<input id="reconnect-url" required placeholder="https://…" /></label>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button value="ok" id="reconnect-ok">Open link</button>
       </menu>
     </form>
   </dialog>

@@ -331,6 +331,8 @@ function updateNavButtons() {
   document.getElementById("back").disabled = !(wv && wv.canGoBack && wv.canGoBack());
   document.getElementById("forward").disabled = !(wv && wv.canGoForward && wv.canGoForward());
   document.getElementById("reload").disabled = !wv;
+  // The "paste a login link" button only makes sense while viewing an AI.
+  document.getElementById("reconnect").style.display = wv ? "inline-flex" : "none";
 }
 document.getElementById("back").onclick = () => { const w = activeWebview(); if (w && w.canGoBack()) w.goBack(); };
 document.getElementById("forward").onclick = () => { const w = activeWebview(); if (w && w.canGoForward()) w.goForward(); };
@@ -744,6 +746,30 @@ addDialog.addEventListener("close", async () => {
   await loadProviders(await window.api.getState());
   buildRail(); buildSettingsProviders();
 });
+
+// -------------------------------------------------------------- reconnect (paste login link)
+const reconnectDialog = document.getElementById("reconnect-dialog");
+document.getElementById("reconnect").onclick = async () => {
+  if (!isProvider(current)) return;
+  const p = providers.find((x) => x.id === current);
+  document.getElementById("reconnect-ai").textContent = p ? p.name : "this AI";
+  const input = document.getElementById("reconnect-url");
+  input.value = "";
+  // Prefill from the clipboard if it already holds a link, so one click is enough.
+  try { const c = ((await navigator.clipboard.readText()) || "").trim(); if (/^https?:\/\//i.test(c)) input.value = c; } catch (e) {}
+  reconnectDialog.showModal();
+  setTimeout(() => input.focus(), 30);
+};
+reconnectDialog.addEventListener("close", () => {
+  const input = document.getElementById("reconnect-url");
+  let url = input.value.trim();
+  input.value = "";
+  if (reconnectDialog.returnValue !== "ok" || !url || !isProvider(current)) return;
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  // Open the link inside THIS AI's window so the sign-in completes in-session.
+  const wv = ensureWebview(current);
+  if (wv) { try { wv.loadURL(url); } catch (e) { wv.setAttribute("src", url); } select(current); }
+};
 
 // -------------------------------------------------------------- universal rail btn
 document.getElementById("rail-universal").onclick = () => select("__universal__");

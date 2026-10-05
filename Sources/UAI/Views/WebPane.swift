@@ -9,6 +9,7 @@ struct WebPane: View {
     @EnvironmentObject private var app: AppState
     let provider: Provider
     let isActive: Bool
+    @State private var reconnectLink = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,18 +96,38 @@ struct WebPane: View {
     }
 
     private var signInTip: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "key.fill").foregroundStyle(Theme.indigo)
-            Text("Sign in to \(provider.name) below. You only do this once; UAI keeps you signed in.")
-                .font(.callout)
-            Spacer()
-            Text("Got a sign-in link by email? Copy it and come back to UAI.")
-                .font(.caption).foregroundStyle(.secondary)
-            Button("Open Copied Link") { app.openCopiedLink(webViews: webViews) }
-                .controlSize(.small)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "key.fill").foregroundStyle(Theme.indigo)
+                Text("Sign in to \(provider.name) below. You only do this once; UAI keeps you signed in.")
+                    .font(.callout)
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Text("Got a sign-in link by email?").font(.caption).foregroundStyle(.secondary)
+                TextField("Paste the login link here", text: $reconnectLink)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(openPastedLink)
+                Button("Reconnect", action: openPastedLink)
+                    .controlSize(.small)
+                    .disabled(reconnectLink.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Theme.aqua.opacity(0.18))
+    }
+
+    /// Loads a pasted sign-in / magic link into THIS AI's window so the login
+    /// finishes inside UAI (same session) instead of in your browser.
+    private func openPastedLink() {
+        let text = reconnectLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: text), url.scheme?.hasPrefix("http") == true else {
+            app.show(toast: "That doesn't look like a link. Paste the full https:// sign-in link from your email.")
+            return
+        }
+        reconnectLink = ""
+        webViews.open(url, in: provider.id)
+        app.show(toast: "Opening your sign-in link in \(provider.name)…")
     }
 
     private func shareMemory() {
