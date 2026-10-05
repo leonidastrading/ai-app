@@ -7,6 +7,18 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Google sign-in gate: shown until the user is signed in -->
+  <div id="auth-gate" class="hidden">
+    <div class="auth-card">
+      <span class="galaxy big" aria-hidden="true"></span>
+      <h1>UAI</h1>
+      <p>Sign in with Google to sync your AIs, memory and settings across the Mac, Windows and web apps.</p>
+      <button id="google-signin" class="primary">Sign in with Google</button>
+      <p class="auth-note">A browser window opens to finish sign-in, then come back here.</p>
+      <p class="auth-err" id="auth-err"></p>
+    </div>
+  </div>
+
   <div id="app">
     <nav id="rail">
       <button class="rail-item" id="rail-universal" data-id="__universal__" title="Universal AI">
@@ -37,6 +49,11 @@
           <button id="btn-memory" title="Memory">🧠 Memory</button>
           <button id="btn-settings" title="Settings">⚙</button>
           <button id="btn-rightbar" title="Show/hide the activity panel">⇥</button>
+          <div id="acct-chip" class="acct-chip" title="Account" style="display:none">
+            <img id="acct-photo" alt="" />
+            <span id="acct-name"></span>
+            <button id="acct-signout" title="Sign out">Sign out</button>
+          </div>
         </div>
       </header>
 

@@ -238,3 +238,35 @@ dialog menu #add-ok { background: var(--indigo); color: #fff; }
 .att { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 6px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; }
 .att img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
 .att .att-x { cursor: pointer; color: var(--pink); margin-left: 4px; }
+
+/* ---- Google sign-in gate ---- */
+#auth-gate {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(1200px 800px at 50% -10%, #1a1430, #0b0b14 60%);
+}
+#auth-gate.hidden { display: none; }
+#auth-gate .auth-card {
+  width: min(440px, 88vw); text-align: center;
+  padding: 40px 36px; border-radius: 20px;
+  background: rgba(27, 30, 38, 0.72); border: 1px solid var(--border);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+}
+#auth-gate .galaxy.big { width: 104px; height: 104px; margin: 0 auto 14px; display: block; }
+#auth-gate h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: 0.5px; }
+#auth-gate p { color: var(--text-dim); margin: 0 auto 18px; max-width: 320px; line-height: 1.5; }
+#auth-gate .auth-note { font-size: 12px; margin-top: 12px; }
+#auth-gate .auth-err { color: #ff6b8a; min-height: 18px; font-size: 13px; }
+#auth-gate button.primary {
+  padding: 12px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+  border: none; border-radius: 12px; color: #fff;
+  background: linear-gradient(135deg, var(--pink), #b28cff);
+}
+#auth-gate button.primary:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- account chip (topbar) ---- */
+.acct-chip { display: flex; align-items: center; gap: 8px; margin-left: 6px; padding: 3px 8px 3px 4px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 999px; }
+.acct-chip img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.acct-chip #acct-name { font-size: 12px; color: var(--text); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-chip #acct-signout { font-size: 11px; color: var(--text-dim); background: transparent; border: none; cursor: pointer; padding: 2px 4px; }
+.acct-chip #acct-signout:hover { color: var(--pink); }

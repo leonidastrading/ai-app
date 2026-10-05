@@ -6,3 +6,6 @@ build/
 
 # BLOCKED: Chrome cookie import must never ship
 Sources/UAI/Services/BrowserCookieImporter.swift
+
+# Cloud OAuth/Firebase config — generated from CI secrets, kept out of git
+windows/src/main/cloud-config.js

@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const { BUILTIN, IDENTITY_HOSTS, hostMatches } = require("../shared/providers");
+const auth = require("./auth");
 
 // Auto-update from GitHub Releases (optional dependency; never crash without it).
 let autoUpdater = null;
@@ -299,6 +300,17 @@ ipcMain.handle("media:save", (_e, { dataURL, name, role, providerName }) => {
 });
 
 ipcMain.handle("open-external", (_e, url) => { if (url) shell.openExternal(url); });
+
+// ---------------------------------------------------------------- auth + sync
+ipcMain.handle("auth:restore", () => auth.restore());
+ipcMain.handle("auth:current", () => auth.current());
+ipcMain.handle("auth:signIn", async () => {
+  try { return { ok: true, user: await auth.signIn() }; }
+  catch (e) { return { ok: false, error: String(e && e.message ? e.message : e) }; }
+});
+ipcMain.handle("auth:signOut", () => { auth.signOut(); return true; });
+ipcMain.handle("sync:pull", () => auth.pull());
+ipcMain.handle("sync:push", (_e, blob) => auth.push(blob));
 
 // Put an image on the system clipboard so it can be pasted into an AI's
 // composer (the most reliable way to forward an attached image — ChatGPT,

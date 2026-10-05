@@ -32,4 +32,11 @@ contextBridge.exposeInMainWorld("api", {
   installUpdate: () => ipcRenderer.invoke("update:install"),
   onUpdateStatus: (cb) => ipcRenderer.on("update-status", (_e, p) => cb(p)),
   appVersion: () => ipcRenderer.invoke("app:version"),
+  // Google sign-in + cloud sync
+  authRestore: () => ipcRenderer.invoke("auth:restore"),
+  authCurrent: () => ipcRenderer.invoke("auth:current"),
+  authSignIn: () => ipcRenderer.invoke("auth:signIn"),
+  authSignOut: () => ipcRenderer.invoke("auth:signOut"),
+  syncPull: () => ipcRenderer.invoke("sync:pull"),
+  syncPush: (blob) => ipcRenderer.invoke("sync:push", blob),
 });

@@ -13,9 +13,117 @@ let allKnown = [];         // every provider (built-in + custom), unfiltered
 let hidden = new Set();    // provider ids hidden from the rail
 let memory = [];           // user's reusable notes
 
+// -------------------------------------------------------------- auth + sync
+// Google sign-in gates the app; synced UAI data lives in one JSON blob in
+// Firestore (users/{uid}.data), the same shape the Mac and web apps use.
+let currentUser = null;
+let applyingRemote = false;
+let pushTimer = null;
+// blob key -> local state key
+const SYNC_MAP = {
+  custom: "customProviders",
+  memory: "memory",
+  recents: "universalRecents",
+  profile: "profile",
+  railOrder: "railOrder",
+  hidden: "hiddenProviders",
+};
+const SYNC_STATE_KEYS = Object.values(SYNC_MAP);
+
+// Push synced state up whenever setState or a custom-AI change touches it.
+if (window.api) {
+  const _setState = window.api.setState;
+  window.api.setState = async (patch) => {
+    const r = await _setState(patch);
+    if (patch && Object.keys(patch).some((k) => SYNC_STATE_KEYS.includes(k))) scheduleSyncPush();
+    return r;
+  };
+  const _add = window.api.addCustomAI;
+  window.api.addCustomAI = async (c) => { const r = await _add(c); scheduleSyncPush(); return r; };
+  const _remove = window.api.removeCustomAI;
+  window.api.removeCustomAI = async (id) => { const r = await _remove(id); scheduleSyncPush(); return r; };
+}
+
+function showGate(show) { document.getElementById("auth-gate").classList.toggle("hidden", !show); }
+
+function ensureSignedIn() {
+  return new Promise(async (resolve) => {
+    showGate(false);
+    let user = null;
+    try { user = await window.api.authRestore(); } catch (e) {}
+    if (user) { currentUser = user; resolve(user); return; }
+    showGate(true);
+    const btn = document.getElementById("google-signin");
+    const err = document.getElementById("auth-err");
+    btn.onclick = async () => {
+      btn.disabled = true; err.textContent = ""; btn.textContent = "Opening browser…";
+      let r = null;
+      try { r = await window.api.authSignIn(); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+      btn.disabled = false; btn.textContent = "Sign in with Google";
+      if (r && r.ok && r.user) { currentUser = r.user; showGate(false); resolve(r.user); }
+      else { err.textContent = (r && r.error) || "Sign-in failed. Please try again."; }
+    };
+  });
+}
+
+async function syncPullIntoState() {
+  let blob = {};
+  try { blob = (await window.api.syncPull()) || {}; } catch (e) {}
+  const patch = {};
+  for (const bk in SYNC_MAP) {
+    const v = blob[bk];
+    if (bk === "profile") { if (v && typeof v === "object") patch.profile = v; }
+    else if (Array.isArray(v)) patch[SYNC_MAP[bk]] = v;
+  }
+  // First sign-in with nothing stored yet: seed the profile from the Google account.
+  if (!patch.profile) {
+    try {
+      const cur = (await window.api.getState()).profile || {};
+      if (!cur.name && currentUser && currentUser.name) patch.profile = { name: currentUser.name, avatar: currentUser.photo || cur.avatar || "" };
+    } catch (e) {}
+  }
+  if (Object.keys(patch).length) {
+    applyingRemote = true;
+    try { await window.api.setState(patch); } finally { applyingRemote = false; }
+  }
+}
+
+function scheduleSyncPush() {
+  if (applyingRemote || !currentUser) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(doSyncPush, 800);
+}
+async function doSyncPush() {
+  if (!currentUser) return;
+  let state = {};
+  try { state = await window.api.getState(); } catch (e) { return; }
+  const blob = {};
+  for (const bk in SYNC_MAP) {
+    const v = state[SYNC_MAP[bk]];
+    if (bk === "profile") { if (v && typeof v === "object") blob.profile = v; }
+    else if (Array.isArray(v)) blob[bk] = v;
+  }
+  try { await window.api.syncPush(blob); } catch (e) {}
+}
+
+function renderAccount() {
+  const chip = document.getElementById("acct-chip");
+  if (!chip) return;
+  if (!currentUser) { chip.style.display = "none"; return; }
+  chip.style.display = "";
+  const img = document.getElementById("acct-photo");
+  if (currentUser.photo) { img.src = currentUser.photo; img.style.display = ""; } else { img.style.display = "none"; }
+  document.getElementById("acct-name").textContent = currentUser.name || currentUser.email || "Account";
+}
+const _acctBtn = document.getElementById("acct-signout");
+if (_acctBtn) _acctBtn.onclick = async () => { try { await window.api.authSignOut(); } catch (e) {} location.reload(); };
+
 // -------------------------------------------------------------- startup
 drawGalaxies();   // render the spiral galaxy SVG into the rail icon + hero
 async function boot() {
+  await ensureSignedIn();      // blocks on the sign-in gate until Google sign-in succeeds
+  renderAccount();
+  await syncPullIntoState();   // bring this account's cloud data down before first render
   const state = await window.api.getState();
   recents = state.universalRecents || [];
   notifications = state.notifications || [];

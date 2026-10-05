@@ -26,6 +26,18 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Write cloud config (Firebase + Google OAuth)
+        shell: bash
+        run: |
+          cat > src/main/cloud-config.js <<EOF
+          module.exports = {
+            firebaseApiKey: "${{ secrets.FIREBASE_API_KEY }}",
+            projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+            googleClientId: "${{ secrets.GOOGLE_CLIENT_ID }}",
+            googleClientSecret: "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+          };
+          EOF
+
       - name: Syntax-check renderer/main scripts
         run: |
           node --check src/renderer/renderer.js
@@ -33,6 +45,8 @@ jobs:
           node --check src/main/main.js
           node --check src/main/preload.js
           node --check src/main/webview-preload.js
+          node --check src/main/auth.js
+          node --check src/main/cloud-config.js
 
       - name: Build installer and publish release
         env:
