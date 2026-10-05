@@ -776,7 +776,7 @@ reconnectDialog.addEventListener("close", () => {
   // Open the link inside THIS AI's window so the sign-in completes in-session.
   const wv = ensureWebview(current);
   if (wv) { try { wv.loadURL(url); } catch (e) { wv.setAttribute("src", url); } select(current); }
-};
+});
 
 // -------------------------------------------------------------- claude working rules
 const CLAUDE_RULES = `Please keep these working rules in mind for all of our conversations:
