@@ -104,9 +104,15 @@ extension UAIApp {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Keeps App Nap from suspending background web views (and their reply
+    /// detectors) when UAI isn't frontmost, so notifications still fire.
+    private var backgroundActivity: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Launched from a bare executable (swift run) we'd otherwise be a background app.
         NSApp.setActivationPolicy(.regular)
+        backgroundActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated], reason: "Watch open AIs for finished replies")
         // Dark everywhere, including the AIs' own pages (they follow the app's appearance).
         NSApp.appearance = NSAppearance(named: .darkAqua)
         NSApp.activate(ignoringOtherApps: true)

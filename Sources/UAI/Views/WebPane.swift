@@ -20,7 +20,7 @@ struct WebPane: View {
                 reconnectBar
                 Divider()
             }
-            WebViewHost(webView: webViews.webView(for: provider.id), isHidden: !isActive)
+            WebViewHost(webView: webViews.webView(for: provider.id))
                 .overlay {
                     // Dark cover until the page first paints, so it never flashes white.
                     if !webViews.firstLoaded.contains(provider.id) {
@@ -33,7 +33,10 @@ struct WebPane: View {
                 }
         }
         .background(Theme.contentBackground)
-        .opacity(isActive ? 1 : 0)
+        // Inactive panes aren't hidden (a hidden WKWebView suspends its JS, which
+        // would stop the reply-finished detector while you're on another AI).
+        // The active pane has a higher zIndex and an opaque background, so it
+        // covers the others; they stay fully live in the background.
         .allowsHitTesting(isActive)
     }
 
@@ -165,7 +168,6 @@ struct WebPane: View {
 /// SwiftUI updates so sessions and in-flight answers survive tab switches.
 struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
-    let isHidden: Bool
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
@@ -175,7 +177,6 @@ struct WebViewHost: NSViewRepresentable {
 
     func updateNSView(_ container: NSView, context: Context) {
         if webView.superview !== container { attach(to: container) }
-        container.isHidden = isHidden
     }
 
     private func attach(to container: NSView) {

@@ -147,6 +147,11 @@ function ensureWebview(id, initialURL) {
   wv.setAttribute("partition", "persist:uai");
   wv.setAttribute("preload", window.api.webviewPreload);
   wv.setAttribute("allowpopups", "");
+  // Keep JS timers running while this AI is in the background (hidden with
+  // display:none). Otherwise Chromium throttles/suspends the page and the
+  // reply-finished detector never fires — so no badge/notification when you've
+  // navigated to another AI, which is exactly when it's needed.
+  wv.setAttribute("webpreferences", "backgroundThrottling=false");
   wv.setAttribute("src", initialURL || p.home);
   wv.dataset.id = id;
   paneWebviews.appendChild(wv);
