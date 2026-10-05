@@ -30,6 +30,7 @@ final class WebViewStore: NSObject, ObservableObject {
     /// Called when a file you download from an AI finishes saving: (filename).
     var onDownload: ((String) -> Void)?
     private var lastDownloadName = "file"
+    private var lastDownloadURL: URL?
     /// Called when Gemini finishes loading while signed in (for profile import).
     var onGeminiReady: (() -> Void)?
 
@@ -1069,15 +1070,24 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
                   suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        let folder = provider(of: download.webView).map(Paths.mediaFolder(for:)) ?? Paths.media
-        let dest = Paths.uniqueFile(named: suggestedFilename, in: folder)
-        lastDownloadName = dest.lastPathComponent
-        completionHandler(dest)
+        // Let you choose where on your computer to save it (like a browser),
+        // defaulting to Downloads — not hidden away in the app's Media folder.
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = suggestedFilename.isEmpty ? "download" : suggestedFilename
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.canCreateDirectories = true
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { completionHandler(nil); return }
+            self?.lastDownloadURL = url
+            self?.lastDownloadName = url.lastPathComponent
+            completionHandler(url)
+        }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        media.reload()
-        lastDownload = media.items.first?.url
+        if let url = lastDownloadURL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])   // reveal in Finder
+        }
         onDownload?(lastDownloadName)
     }
 

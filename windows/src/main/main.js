@@ -191,13 +191,19 @@ function wireDownloads(s) {
   wiredSessions.add(s);
   s.on("will-download", (_e, item) => {
     try {
-      fs.mkdirSync(MEDIA_DIR, { recursive: true });
       const name = item.getFilename() || "download";
-      item.setSavePath(uniquePath(MEDIA_DIR, name));
+      // Let you choose where on your computer to save it (native Save dialog,
+      // defaulting to Downloads). NOT calling setSavePath makes Electron show
+      // the dialog — so downloads land where you want, like a browser.
+      try {
+        const dl = app.getPath("downloads");
+        item.setSaveDialogOptions({ defaultPath: path.join(dl, name) });
+      } catch (e) {}
       item.once("done", (_ev, state) => {
-        if (mainWindow) mainWindow.webContents.send("media-changed");
         if (state === "completed") {
-          try { new Notification({ title: "Saved to Media", body: name }).show(); } catch (e) {}
+          const p = item.getSavePath();
+          try { new Notification({ title: "Download saved", body: p || name }).show(); } catch (e) {}
+          try { if (p) shell.showItemInFolder(p); } catch (e) {}
         }
       });
     } catch (e) {}
