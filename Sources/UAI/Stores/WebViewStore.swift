@@ -676,43 +676,60 @@ extension WebViewStore {
     })();
     """
 
-    /// Watches for the "Stop" button that every AI shows while it writes.
-    /// When it goes away after a few seconds, the reply is done.
+    /// Detects when an AI finishes replying. Rather than relying only on each
+    /// site's "Stop" button (sites keep changing it), it also watches the reply
+    /// text itself: a reply that was streaming and then stops growing for ~2.5s
+    /// is done. Guards against false positives when you merely open an existing
+    /// chat (one big jump, not sustained streaming) and dedupes repeats.
     static let replyWatcherScript = """
     (() => {
       if (window.__uaiReplyWatch) return;
       window.__uaiReplyWatch = true;
       const stopSelector = [
         'button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]',
-        '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]'
+        '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]',
+        'button[aria-label*="generating" i]', '[data-testid="stop-button"]'
       ].join(',');
       const replySelector = [
         '[data-message-author-role="assistant"]', '.font-claude-response', '.font-claude-message',
-        'model-response', '.ds-markdown', '[data-testid="assistant-message"]', '.message-bubble'
+        'model-response', '.model-response-text', '.ds-markdown', '[data-testid="assistant-message"]',
+        '[data-testid="markdown"]', '.message-bubble', '.markdown', '.prose'
       ].join(',');
-      let busy = false, since = 0;
+      const measure = () => {
+        const els = document.querySelectorAll(replySelector);
+        let total = 0;
+        for (const e of els) total += (e.innerText || '').length;
+        const last = els.length ? (els[els.length - 1].innerText || '') : '';
+        return { total, count: els.length, last };
+      };
+      let lastTotal = -1, lastCount = -1, growth = 0, genActive = false, lastChange = 0, lastFired = '';
       setInterval(() => {
+        const now = Date.now();
         const stop = [...document.querySelectorAll(stopSelector)].find(b => {
           const label = (b.getAttribute('aria-label') || b.title || '').toLowerCase();
           return b.offsetParent !== null && !label.includes('record') && !label.includes('dictat');
         });
-        const now = Date.now();
-        if (stop && !busy) { busy = true; since = now; return; }
-        if (!stop && busy) {
-          busy = false;
-          if (now - since < 2000) return;
-          const replies = document.querySelectorAll(replySelector);
-          const last = replies.length ? replies[replies.length - 1].innerText : '';
-          window.webkit.messageHandlers.uai.postMessage({
-            type: 'replyDone', title: document.title,
-            preview: (last || '').replace(/\\s+/g, ' ').trim().slice(0, 220)
-          });
-          // A reply may include a generated image/video — scan for it now, and
-          // again shortly after in case it finishes rendering a moment later.
+        const m = measure();
+        if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; } // prime baseline
+        const grew = m.total > lastTotal || m.count > lastCount;
+        if (stop) { genActive = true; lastChange = now; growth = 0; }
+        else if (grew) { growth++; lastChange = now; if (growth >= 2) genActive = true; }
+        else { growth = 0; }
+        lastTotal = m.total; lastCount = m.count;
+
+        // Finished: was generating, no Stop button now, and text stable for 2.5s.
+        if (genActive && !stop && now - lastChange > 2500) {
+          genActive = false; growth = 0;
+          const preview = (m.last || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
+          if (preview && preview !== lastFired) {
+            lastFired = preview;
+            window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview });
+          }
+          // A reply may include a generated image/video — scan now and shortly after.
           try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
           setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
         }
-      }, 800);
+      }, 700);
     })();
     """
 }

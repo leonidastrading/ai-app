@@ -38,33 +38,50 @@ function captureSends() {
 
 // ---- reply detection -------------------------------------------------
 function replyWatcher() {
+  // Detect a finished reply by watching the reply text stop growing, not only
+  // by the site's "Stop" button (which sites keep changing). Guards against a
+  // single big jump (opening an existing chat) and dedupes repeats.
   const stopSel = [
     'button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]',
     '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]',
+    'button[aria-label*="generating" i]', '[data-testid="stop-button"]',
   ].join(",");
   const replySel = [
     '[data-message-author-role="assistant"]', ".font-claude-response", ".font-claude-message",
-    "model-response", ".ds-markdown", '[data-testid="assistant-message"]', ".message-bubble",
+    "model-response", ".model-response-text", ".ds-markdown", '[data-testid="assistant-message"]',
+    '[data-testid="markdown"]', ".message-bubble", ".markdown", ".prose",
   ].join(",");
-  let busy = false, since = 0;
+  const measure = () => {
+    const els = document.querySelectorAll(replySel);
+    let total = 0;
+    for (const e of els) total += (e.innerText || "").length;
+    const last = els.length ? (els[els.length - 1].innerText || "") : "";
+    return { total, count: els.length, last };
+  };
+  let lastTotal = -1, lastCount = -1, growth = 0, genActive = false, lastChange = 0, lastFired = "";
   setInterval(() => {
+    const now = Date.now();
     const stop = [...document.querySelectorAll(stopSel)].find((b) => {
       const label = (b.getAttribute("aria-label") || b.title || "").toLowerCase();
       return b.offsetParent !== null && !label.includes("record") && !label.includes("dictat");
     });
-    const now = Date.now();
-    if (stop && !busy) { busy = true; since = now; return; }
-    if (!stop && busy) {
-      busy = false;
-      if (now - since < 2000) return;
-      const replies = document.querySelectorAll(replySel);
-      const last = replies.length ? replies[replies.length - 1].innerText : "";
-      ipcRenderer.sendToHost("reply", {
-        title: document.title,
-        preview: (last || "").replace(/\s+/g, " ").trim().slice(0, 220),
-      });
+    const m = measure();
+    if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
+    const grew = m.total > lastTotal || m.count > lastCount;
+    if (stop) { genActive = true; lastChange = now; growth = 0; }
+    else if (grew) { growth++; lastChange = now; if (growth >= 2) genActive = true; }
+    else { growth = 0; }
+    lastTotal = m.total; lastCount = m.count;
+
+    if (genActive && !stop && now - lastChange > 2500) {
+      genActive = false; growth = 0;
+      const preview = (m.last || "").replace(/\s+/g, " ").trim().slice(0, 220);
+      if (preview && preview !== lastFired) {
+        lastFired = preview;
+        ipcRenderer.sendToHost("reply", { title: document.title, preview });
+      }
     }
-  }, 1000);
+  }, 700);
 }
 
 // ---- media + screenshots --------------------------------------------
