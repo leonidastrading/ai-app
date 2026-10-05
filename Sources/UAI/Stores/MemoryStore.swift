@@ -63,6 +63,15 @@ final class MemoryStore: ObservableObject {
 
     private func save() { JSONFile.save(notes, to: Self.file) }
 
+    // MARK: - Cloud sync
+    /// All note texts, for syncing (the cross-platform blob stores memory as strings).
+    var allTexts: [String] { notes.map(\.text) }
+    /// Replace all notes with the given texts (from a cloud pull).
+    func replaceAllTexts(_ texts: [String]) {
+        notes = texts.map { MemoryNote(text: $0, source: "You") }
+        save()
+    }
+
     // MARK: - Sharing memory with an AI
 
     /// Context to put in front of a prompt: memory notes plus excerpts of

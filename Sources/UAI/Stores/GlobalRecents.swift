@@ -37,4 +37,10 @@ final class GlobalRecents: ObservableObject {
         items = []
         JSONFile.save(items, to: Self.file)
     }
+
+    /// Replace all items (from a cloud pull).
+    func replaceAll(_ newItems: [RecentPrompt]) {
+        items = Array(newItems.prefix(100))
+        JSONFile.save(items, to: Self.file)
+    }
 }

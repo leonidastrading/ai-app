@@ -10,21 +10,31 @@ struct UAIApp: App {
     @StateObject private var universal: UniversalStore
     @StateObject private var webViews: WebViewStore
     @StateObject private var memory: MemoryStore
-    @StateObject private var profile = Profile()
+    @StateObject private var profile: Profile
     @StateObject private var notifHistory = NotificationHistory()
     @StateObject private var updater = Updater()
-    @StateObject private var recents = GlobalRecents()
+    @StateObject private var recents: GlobalRecents
+    @StateObject private var auth: AuthStore
+    @StateObject private var cloud: CloudSync
     @ObservedObject private var registry = ProviderRegistry.shared
 
     init() {
         let index = ConversationIndex()
         let media = MediaLibrary()
+        let profile = Profile()
+        let recents = GlobalRecents()
+        let memory = MemoryStore(index: index)
+        let auth = AuthStore()
         _app = StateObject(wrappedValue: AppState())
         _index = StateObject(wrappedValue: index)
         _media = StateObject(wrappedValue: media)
         _universal = StateObject(wrappedValue: UniversalStore())
         _webViews = StateObject(wrappedValue: WebViewStore(index: index, media: media))
-        _memory = StateObject(wrappedValue: MemoryStore(index: index))
+        _memory = StateObject(wrappedValue: memory)
+        _profile = StateObject(wrappedValue: profile)
+        _recents = StateObject(wrappedValue: recents)
+        _auth = StateObject(wrappedValue: auth)
+        _cloud = StateObject(wrappedValue: CloudSync(auth: auth, memory: memory, recents: recents, profile: profile))
     }
 
     var body: some Scene {
@@ -39,6 +49,8 @@ struct UAIApp: App {
                 .environmentObject(profile)
                 .environmentObject(notifHistory)
                 .environmentObject(recents)
+                .environmentObject(auth)
+                .environmentObject(cloud)
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
@@ -98,6 +110,8 @@ struct UAIApp: App {
                 .environmentObject(memory)
                 .environmentObject(profile)
                 .environmentObject(updater)
+                .environmentObject(auth)
+                .environmentObject(cloud)
         }
     }
 }

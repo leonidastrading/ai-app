@@ -6,9 +6,28 @@ struct MainView: View {
     @EnvironmentObject private var profile: Profile
     @EnvironmentObject private var history: NotificationHistory
     @EnvironmentObject private var recents: GlobalRecents
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var cloud: CloudSync
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
+        Group {
+            if auth.isSignedIn {
+                mainContent
+            } else {
+                SignInGate()
+            }
+        }
+        .task {
+            // Try to resume a saved session on launch; pull cloud data if signed in.
+            if await auth.restore() { await cloud.startAfterSignIn() }
+        }
+        .onChange(of: auth.isSignedIn) { signedIn in
+            if signedIn { Task { await cloud.startAfterSignIn() } }
+        }
+    }
+
+    private var mainContent: some View {
         HStack(spacing: 0) {
             ModelRail()
             content

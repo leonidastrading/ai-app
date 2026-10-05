@@ -16,11 +16,30 @@ struct SettingsView: View {
 private struct AccountSettings: View {
     @EnvironmentObject private var profile: Profile
     @EnvironmentObject private var webViews: WebViewStore
+    @EnvironmentObject private var auth: AuthStore
     @State private var importing = false
     @State private var message: String?
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(auth.account?.name.isEmpty == false ? auth.account!.name : (auth.account?.email ?? "Signed in"))
+                            .fontWeight(.medium)
+                        if let email = auth.account?.email, !email.isEmpty {
+                            Text(email).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button("Sign Out", role: .destructive) { auth.signOut() }
+                }
+            } header: {
+                Text("UAI account")
+            } footer: {
+                Text("Signed in with Google. Your custom AIs, memory, recents, profile and layout sync across the Mac, Windows and web apps.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section {
                 HStack(spacing: 14) {
                     AvatarView(image: profile.avatar, size: 56)

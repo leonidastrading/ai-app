@@ -264,6 +264,15 @@ final class ProviderRegistry: ObservableObject {
         JSONFile.save(custom, to: Self.file)
     }
 
+    // MARK: - Cloud sync
+    /// Replace the full custom-AI list (from a cloud pull).
+    func replaceCustom(_ list: [CustomProvider]) {
+        custom = list
+        JSONFile.save(custom, to: Self.file)
+    }
+    /// Set the rail order (from a cloud pull).
+    func setOrder(_ ids: [String]) { save(ids) }
+
     // MARK: - Custom rail icons (right-click → Set Icon…, or auto from a page)
 
     /// Bumped whenever a custom icon changes, so icons refresh.

@@ -31,6 +31,24 @@ final class Profile: ObservableObject {
         }
     }
 
+    // MARK: - Cloud sync
+    func setName(_ newName: String) { name = newName }
+
+    /// The avatar as a PNG data URL (for syncing), matching the Windows/web shape.
+    func avatarDataURL() -> String? {
+        guard let tiff = avatar?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        return "data:image/png;base64," + png.base64EncodedString()
+    }
+
+    /// Set the avatar from a data: URL (from a cloud pull); nil/empty clears it.
+    func setAvatar(fromDataURL dataURL: String?) {
+        guard let dataURL, let comma = dataURL.range(of: ","),
+              let data = Data(base64Encoded: String(dataURL[comma.upperBound...])),
+              let image = NSImage(data: data) else { setAvatar(nil); return }
+        setAvatar(image)
+    }
+
     func chooseAvatarFromDisk() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]

@@ -19,6 +19,20 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      - name: Write cloud config (Firebase + Google OAuth)
+        run: |
+          cat > Sources/UAI/Services/CloudConfig.swift <<EOF
+          import Foundation
+
+          enum CloudConfig {
+              static let firebaseApiKey = "${{ secrets.FIREBASE_API_KEY }}"
+              static let projectId = "${{ secrets.FIREBASE_PROJECT_ID }}"
+              static let googleClientId = "${{ secrets.GOOGLE_CLIENT_ID }}"
+              static let googleClientSecret = "${{ secrets.GOOGLE_CLIENT_SECRET }}"
+              static var isConfigured: Bool { !googleClientId.hasPrefix("YOUR_") && !googleClientId.isEmpty }
+          }
+          EOF
+
       - name: Load Sparkle public key
         id: edkey
         run: |
