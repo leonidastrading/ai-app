@@ -28,7 +28,7 @@ final class GlobalRecents: ObservableObject {
         // Ignore an immediate repeat (e.g. an Enter keydown and a send click for
         // the same message).
         if let first = items.first, first.provider == provider, first.text == t { return }
-        items.insert(RecentPrompt(provider: provider, text: t), at: 0)
+        items.insert(RecentPrompt(provider: provider, text: t, date: Date()), at: 0)
         if items.count > 100 { items.removeLast(items.count - 100) }
         JSONFile.save(items, to: Self.file)
     }
