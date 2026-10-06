@@ -167,6 +167,9 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
     const p = byId(out.provider);
     const url = p.prefill ? p.prefill(prompt) : p.home;
     window.open(url, "_blank", "noopener");
+    // Save the routed prompt to Recent (synced to every device).
+    try { window.UAI_sync && window.UAI_sync.addRecent && window.UAI_sync.addRecent({ id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: prompt, providerId: out.provider, at: Date.now() }); } catch (e) {}
+    document.getElementById("ask").value = "";
     const hint = p.prefill ? "" : " — your prompt is copied, press ⌘/Ctrl+V to paste";
     status.innerHTML = `Opened <strong>${esc(p.name)}</strong>${out.reason ? " — " + esc(out.reason) : ""}${out.local ? ' <span class="muted">(offline)</span>' : ""}${hint}`;
   } catch (err) {
@@ -366,6 +369,9 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 document.getElementById("note").innerHTML =
   "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab with your question pre-filled where the AI supports it (Claude, ChatGPT, xAI, v0). For the rest — and if a link opens the AI’s desktop app, which drops the pre-fill — your prompt is copied to the clipboard: just press ⌘/Ctrl+V. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
+
+const WEB_VERSION = "2026.10.06";
+try { document.getElementById("webver").textContent = "UAI web · v" + WEB_VERSION; } catch (e) {}
 
 renderGrid();
 

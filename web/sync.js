@@ -137,7 +137,12 @@
         window.UAI_recents = merged; window.UAI_recentsJSON = JSON.stringify(merged);
         tx.set(docRef, { recents: JSON.stringify(merged), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
       });
-    }).catch(function () {});
+    }).catch(function () {
+      // Fallback: plain write so a prompt is never lost if the transaction fails.
+      try {
+        docRef.set({ recents: JSON.stringify(window.UAI_recents || []), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(function () {});
+      } catch (e) {}
+    });
   }
 
   // Add an entry to Recent and sync it so it shows on every signed-in device.
