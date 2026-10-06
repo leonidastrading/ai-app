@@ -19,6 +19,10 @@ struct MainView: View {
             }
         }
         .task {
+            // Also surface a found update in the in-app Activity panel, not just
+            // as a macOS banner + toolbar badge.
+            updater.onUpdateFound = { [weak history] version in history?.addUpdate(version: version) }
+            if updater.updateAvailable { history.addUpdate(version: updater.availableVersion) }
             // Try to resume a saved session on launch; pull cloud data if signed in.
             if await auth.restore() { await cloud.startAfterSignIn() }
         }

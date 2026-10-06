@@ -21,6 +21,11 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
     /// True when this build carries a Sparkle public key, so updates are live.
     let isConfigured: Bool
 
+    /// Called on the main thread the first time a given newer version is found,
+    /// so the app can also surface it in the in-app Activity panel (not just as
+    /// a macOS banner + toolbar badge).
+    var onUpdateFound: (@MainActor (String) -> Void)?
+
     private var controller: SPUStandardUpdaterController?
     private var notifiedVersion = ""
 
@@ -60,6 +65,7 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
                 self.notifiedVersion = version
                 Notifier.shared.announce(title: "UAI update available",
                                          body: "Version \(version) is ready — it will install on the next relaunch, or update now from the toolbar.")
+                self.onUpdateFound?(version)
             }
         }
     }

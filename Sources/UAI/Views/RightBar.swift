@@ -7,6 +7,7 @@ struct RightBar: View {
     @EnvironmentObject private var history: NotificationHistory
     @EnvironmentObject private var webViews: WebViewStore
     @EnvironmentObject private var recents: GlobalRecents
+    @EnvironmentObject private var updater: Updater
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,8 +65,12 @@ struct RightBar: View {
                     LazyVStack(spacing: 2) {
                         ForEach(history.items) { item in
                             NotifRow(item: item) {
-                                app.go(.provider(item.provider))
-                                if let s = item.url, let url = URL(string: s) { webViews.open(url, in: item.provider) }
+                                if item.isUpdate == true {
+                                    updater.checkForUpdates()
+                                } else {
+                                    app.go(.provider(item.provider))
+                                    if let s = item.url, let url = URL(string: s) { webViews.open(url, in: item.provider) }
+                                }
                             }
                         }
                     }
@@ -196,10 +201,15 @@ private struct NotifRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 8) {
-                ProviderIcon(provider: Provider.get(item.provider), size: 24)
+                if item.isUpdate == true {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 20)).foregroundStyle(Theme.pink).frame(width: 24, height: 24)
+                } else {
+                    ProviderIcon(provider: Provider.get(item.provider), size: 24)
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack {
-                        Text("\(Provider.get(item.provider).name) replied").font(.caption.bold())
+                        Text(item.isUpdate == true ? "UAI update available" : "\(Provider.get(item.provider).name) replied").font(.caption.bold())
                         Spacer()
                         Text(item.date.formatted(.relative(presentation: .numeric))).font(.caption2).foregroundStyle(.tertiary)
                     }
