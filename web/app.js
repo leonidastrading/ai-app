@@ -79,6 +79,12 @@ function renderGrid() {
     el.onclick = () => openProvider(p, document.getElementById("ask").value.trim() || null);
     grid.appendChild(el);
   }
+  // "Add an AI" card at the end of the grid.
+  const add = document.createElement("button");
+  add.className = "card card-add";
+  add.innerHTML = `<span class="ic add-ic">+</span><span class="nm">Add an AI</span><span class="mk">Custom</span>`;
+  add.onclick = () => { renderCustomList(); dlg.showModal(); };
+  grid.appendChild(add);
   renderRecents();
 }
 
@@ -190,6 +196,20 @@ document.getElementById("ask").addEventListener("paste", (e) => {
   const files = []; for (const it of items) if (it.kind === "file") { const f = it.getAsFile(); if (f) files.push(f); }
   if (files.length) { e.preventDefault(); addAskFiles(files); }
 });
+// Drag-and-drop files onto the prompt box.
+const askField = document.querySelector(".ask-field");
+if (askField) {
+  ["dragenter", "dragover"].forEach((ev) => askField.addEventListener(ev, (e) => {
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    e.preventDefault(); e.stopPropagation(); askField.classList.add("drag");
+  }));
+  askField.addEventListener("dragleave", (e) => { if (!askField.contains(e.relatedTarget)) askField.classList.remove("drag"); });
+  askField.addEventListener("drop", (e) => {
+    e.preventDefault(); e.stopPropagation(); askField.classList.remove("drag");
+    const files = (e.dataTransfer && e.dataTransfer.files) || [];
+    if (files.length) addAskFiles(files);
+  });
+}
 
 document.getElementById("send-uai-btn").onclick = () => {
   const text = document.getElementById("ask").value.trim();

@@ -95,10 +95,14 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #acct-chip 
 .recent-row .rr-meta { font-size: 12px; color: var(--dim); }
 
 /* Composer actions + attachments */
+.ask-field { position: relative; }
+.ask-field #ask { padding-bottom: 42px; }
+.attach-in { position: absolute; left: 8px; bottom: 8px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; background: transparent; border: none; border-radius: 9px; color: var(--dim); cursor: pointer; }
+.attach-in:hover { background: var(--elev2); color: var(--text); }
 .ask-actions { display: flex; align-items: center; gap: 10px; }
 .ask-actions .spacer { flex: 1 1 auto; }
-.ask-actions .ghost { margin-left: 0; }
-#send-uai-btn { font-weight: 600; }
+#send-uai-btn { padding: 11px 26px; border-radius: 10px; font-weight: 600; color: #fff; border: none; cursor: pointer; background: linear-gradient(120deg, var(--aqua), #2f86c9); }
+#send-uai-btn:hover { filter: brightness(1.05); }
 .ask-attachments { display: flex; flex-wrap: wrap; gap: 8px; }
 .ask-attachments:empty { display: none; }
 .att-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px 5px 5px; border-radius: 10px; background: var(--elev); border: 1px solid var(--border); font-size: 12px; }
@@ -111,3 +115,13 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #acct-chip 
 .recent-row .rr-thumbs { flex: 0 0 auto; display: flex; gap: 4px; margin-left: 8px; }
 .recent-row .rr-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; }
 .recent-row .rr-attlabel { flex: 0 0 auto; margin-left: 8px; font-size: 12px; color: var(--dim); }
+
+/* Add-an-AI card */
+.card-add { border-style: dashed; color: var(--dim); }
+.card-add:hover { border-color: var(--aqua); color: var(--text); }
+.card-add .add-ic { font-size: 30px; line-height: 1; color: var(--dim); background: var(--elev2); }
+.card-add:hover .add-ic { color: var(--aqua); }
+
+/* Drag-and-drop highlight on the prompt box */
+.ask-field.drag #ask { border-color: var(--aqua); box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua) 30%, transparent); }
+.ask-field.drag::after { content: "Drop files to attach"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--aqua) 10%, transparent); border-radius: 12px; font-size: 14px; color: var(--text); pointer-events: none; }
