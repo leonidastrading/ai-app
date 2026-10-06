@@ -96,6 +96,9 @@ final class WebViewStore: NSObject, ObservableObject {
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
+        // Allow Safari's Web Inspector to attach (Develop menu) so the reply
+        // detector's console logs can be seen when debugging notifications.
+        if #available(macOS 13.3, *) { webView.isInspectable = true }
         webView.customUserAgent = Self.userAgent
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
@@ -754,6 +757,8 @@ extension WebViewStore {
     (() => {
       if (window.__uaiReplyWatch) return;
       window.__uaiReplyWatch = true;
+      const hasHandler = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.uai);
+      console.log('[UAI] reply-watcher injected on', location.host, 'handler:', hasHandler);
       const stopSelector = [
         'button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]',
         '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]',
@@ -778,7 +783,9 @@ extension WebViewStore {
         const preview = ((m.lastEl && m.lastEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
         if (preview && preview !== lastFired) {
           lastFired = preview;
-          window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview });
+          console.log('[UAI] replyDone ->', preview.slice(0, 50));
+          try { window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview }); }
+          catch (e) { console.log('[UAI] postMessage FAILED', String(e)); }
         }
         try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
         setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
