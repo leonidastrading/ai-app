@@ -41,8 +41,31 @@ fi
 swift scripts/make-icon.swift "$OUT/AppIcon.iconset"
 iconutil -c icns "$OUT/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
-# Ad-hoc signature so macOS will run it (not notarized). Sign Sparkle's nested
-# helpers inside-out first, then the whole app.
+# Code-signing identity. Sparkle only installs an update whose signature matches
+# the installed app's certificate. Ad-hoc signatures differ on every build and
+# are rejected, so when a persistent self-signed cert is provided
+# (MAC_CSC_P12_BASE64 + MAC_CSC_PASSWORD), import it and sign with it — then
+# auto-updates install. Without it, fall back to ad-hoc (runs, but no auto-update).
+SIGN_ID="-"
+if [ -n "${MAC_CSC_P12_BASE64:-}" ] && [ -n "${MAC_CSC_PASSWORD:-}" ]; then
+  KEYCHAIN="$OUT/uai-build.keychain"
+  KPASS="$(openssl rand -base64 18)"
+  echo "$MAC_CSC_P12_BASE64" | base64 --decode > "$OUT/codesign.p12"
+  security create-keychain -p "$KPASS" "$KEYCHAIN"
+  security set-keychain-settings "$KEYCHAIN"
+  security unlock-keychain -p "$KPASS" "$KEYCHAIN"
+  security import "$OUT/codesign.p12" -k "$KEYCHAIN" -P "$MAC_CSC_PASSWORD" -T /usr/bin/codesign
+  security set-key-partition-list -S apple-tool:,apple: -s -k "$KPASS" "$KEYCHAIN" >/dev/null 2>&1 || true
+  # Put our keychain first in the search list so codesign finds the identity.
+  security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+  SIGN_ID="UAI Self-Signed"   # the CN baked into the cert by mac-codesign-keygen
+  rm -f "$OUT/codesign.p12"
+  echo "Signing with self-signed identity: $SIGN_ID"
+else
+  echo "No MAC_CSC_* secret set — ad-hoc signing (auto-update won't install until a cert is configured)." >&2
+fi
+
+# Sign Sparkle's nested helpers inside-out first, then the whole app.
 FW="$APP/Contents/Frameworks/Sparkle.framework"
 if [ -d "$FW" ]; then
   for nested in \
@@ -51,11 +74,12 @@ if [ -d "$FW" ]; then
     "$FW/Versions/B/Updater.app" \
     "$FW/Versions/B/Autoupdate" \
     "$FW/Versions/B/Sparkle"; do
-    [ -e "$nested" ] && codesign --force -s - "$nested" || true
+    [ -e "$nested" ] && codesign --force -s "$SIGN_ID" "$nested" || true
   done
-  codesign --force -s - "$FW" || true
+  codesign --force -s "$SIGN_ID" "$FW" || true
 fi
-codesign --force --deep --sign - "$APP"
+codesign --force --deep --sign "$SIGN_ID" "$APP"
+codesign --verify --deep --strict "$APP" && echo "codesign verify OK" || echo "codesign verify reported issues" >&2
 
 rm -f "$OUT/UAI.zip"
 ditto -c -k --keepParent "$APP" "$OUT/UAI.zip"

@@ -1,0 +1,63 @@
+name: Mac codesign keygen (run once)
+
+# Generates a persistent self-signed code-signing certificate for the Mac app.
+#
+# Why: Sparkle only installs an update if the new build is signed with the SAME
+# certificate as the installed app. Ad-hoc signatures differ on every build, so
+# Sparkle rejects every update ("Code signature of the new version doesn't match
+# the old version"). Signing every build with one stable self-signed cert fixes
+# that. (No paid Apple account needed; Gatekeeper still shows "unidentified
+# developer" — right-click → Open once, same as an ad-hoc build.)
+#
+# Run this ONCE (Actions tab → "Mac codesign keygen" → Run workflow). Then:
+#   1. Download the "mac-codesign" artifact from the run.
+#   2. Add two repo secrets (Settings → Secrets and variables → Actions):
+#        MAC_CSC_P12_BASE64  = contents of uai-codesign.p12.base64
+#        MAC_CSC_PASSWORD    = contents of password.txt
+#   3. Delete this workflow run (so the key material isn't left in artifacts).
+# After that, every Mac build signs with this cert and auto-updates install.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keygen:
+    runs-on: macos-15
+    steps:
+      - name: Generate self-signed code-signing certificate
+        run: |
+          set -euo pipefail
+          cat > cert.cnf <<'EOF'
+          [req]
+          distinguished_name = dn
+          x509_extensions = v3
+          prompt = no
+          [dn]
+          CN = UAI Self-Signed
+          [v3]
+          keyUsage = critical, digitalSignature
+          extendedKeyUsage = critical, codeSigning
+          basicConstraints = critical, CA:false
+          EOF
+          # Random export password, written to a file (never echoed to the log).
+          openssl rand -base64 24 > password.txt
+          PASS="$(cat password.txt)"
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+            -keyout key.pem -out cert.pem -config cert.cnf
+          openssl pkcs12 -export -inkey key.pem -in cert.pem \
+            -name "UAI Self-Signed" -out uai-codesign.p12 -passout pass:"$PASS"
+          base64 -i uai-codesign.p12 -o uai-codesign.p12.base64
+          rm -f key.pem cert.pem uai-codesign.p12 cert.cnf
+          echo "Generated. Download the artifact and add the two secrets (see the workflow header)."
+
+      - name: Upload certificate + password (add as secrets, then delete this run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-codesign
+          path: |
+            uai-codesign.p12.base64
+            password.txt
+          retention-days: 1

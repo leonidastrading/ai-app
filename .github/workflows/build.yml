@@ -47,6 +47,10 @@ jobs:
           UAI_VERSION: 0.1.${{ github.run_number }}
           UAI_BUILD: ${{ github.run_number }}
           SPARKLE_PUBKEY: ${{ steps.edkey.outputs.key }}
+          # Persistent self-signed cert so Sparkle auto-updates install (set via
+          # the "Mac codesign keygen" workflow). Ad-hoc fallback if unset.
+          MAC_CSC_P12_BASE64: ${{ secrets.MAC_CSC_P12_BASE64 }}
+          MAC_CSC_PASSWORD: ${{ secrets.MAC_CSC_PASSWORD }}
         run: ./scripts/build-app.sh
 
       - name: Smoke test (launches and stays running)
