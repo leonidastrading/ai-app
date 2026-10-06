@@ -22,7 +22,7 @@ enum AnthropicClient {
         guard let apiKey else { throw APIError(message: "Add an Anthropic API key in Settings first.") }
 
         let body: [String: Any] = [
-            "model": "claude-opus-5-5",
+            "model": "claude-haiku-4-5",
             "max_tokens": maxTokens,
             "system": system,
             "messages": [["role": "user", "content": user]],

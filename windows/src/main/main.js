@@ -70,7 +70,7 @@ function anthropicStructured({ system, user, schema, effort = "low", maxTokens =
     const key = readKey();
     if (!key) return reject(new Error("Add an Anthropic API key in Settings first."));
     const payload = JSON.stringify({
-      model: "claude-opus-5-5",
+      model: "claude-haiku-4-5",
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content: user }],
