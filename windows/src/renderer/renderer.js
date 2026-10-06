@@ -660,15 +660,47 @@ function renderRecents() {
   box.innerHTML = `<div class="sr-ai" style="margin-bottom:6px">Recent</div>` +
     recents.map((r, i) => {
       const atts = Array.isArray(r.attachments) ? r.attachments : [];
-      const thumbs = atts.filter((a) => a && a.dataURL).slice(0, 4).map((a) => `<img class="recent-thumb" src="${a.dataURL}" alt="">`).join("");
-      const nonImg = atts.filter((a) => a && !a.dataURL).length;
-      const docLabel = nonImg ? `<span class="recent-files">📎 ${nonImg}</span>` : "";
+      const chips = atts.slice(0, 4).map((a, ai) => {
+        const t = a.thumb || a.dataURL;
+        return t
+          ? `<img class="recent-thumb" data-i="${i}" data-ai="${ai}" src="${t}" alt="" title="${escapeAttr(a.name || "")}">`
+          : `<span class="recent-files" data-i="${i}" data-ai="${ai}" title="${escapeAttr(a.name || "file")}">📎</span>`;
+      }).join("");
       const time = r.at ? `<span class="recent-time">${escapeHtml(fmtWhen(r.at))}</span>` : "";
-      return `<div class="recent" data-i="${i}"><span class="recent-text">${escapeHtml(r.text)}</span>${thumbs}${docLabel}${time}</div>`;
+      return `<div class="recent" data-i="${i}"><span class="recent-text">${escapeHtml(r.text)}</span>${chips}${time}</div>`;
     }).join("");
+  box.querySelectorAll(".recent-thumb[data-ai], .recent-files[data-ai]").forEach((el) => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      const r = recents[+el.dataset.i]; const a = r && r.attachments && r.attachments[+el.dataset.ai];
+      if (a) openAttachment(a);
+    };
+  });
   box.querySelectorAll(".recent").forEach((el) => {
     el.onclick = () => { const r = recents[+el.dataset.i]; document.getElementById("universal-input").value = r.text; };
   });
+}
+
+// Open an attachment: images enlarge in a lightbox (with Download); other files
+// open in the browser (where Storage serves them as a download).
+function openAttachment(a) {
+  if (!a) return;
+  const thumb = a.thumb || a.dataURL;
+  const isImg = (a.type || "").startsWith("image/") || (!!thumb && !a.type);
+  if (isImg) { showLightbox(thumb || a.url, a); return; }
+  if (a.url) window.api.openExternal(a.url);
+}
+function showLightbox(src, a) {
+  if (!src) return;
+  let lb = document.getElementById("uai-lightbox");
+  if (!lb) { lb = document.createElement("div"); lb.id = "uai-lightbox"; lb.className = "uai-lightbox"; document.body.appendChild(lb); }
+  lb.innerHTML = `<div class="lb-inner"><img src="${src}" alt=""><div class="lb-actions"><button class="lb-dl">Download</button><button class="lb-close">Close</button></div></div>`;
+  lb.style.display = "flex";
+  lb.querySelector(".lb-dl").onclick = () => {
+    if (a.url) window.api.openExternal(a.url);
+    else { try { const el = document.createElement("a"); el.href = src; el.download = a.name || "image.png"; document.body.appendChild(el); el.click(); el.remove(); } catch (e) {} }
+  };
+  lb.onclick = (e) => { if (e.target === lb || e.target.classList.contains("lb-close")) lb.style.display = "none"; };
 }
 
 // -------------------------------------------------------------- search
@@ -788,11 +820,31 @@ document.getElementById("media-folder").onclick = () => window.api.openMediaFold
 
 // -------------------------------------------------------------- memory
 document.getElementById("btn-memory").onclick = () => select("__memory__");
+// A recommended memory note (the working rules), addable with one click.
+const WORKING_RULES = `# Working rules
+
+- No human reads this file. Optimize it for your own adherence, not readability.
+- If my request is ambiguous, ask one clarifying question, then proceed with your best judgment. Only stop to ask when a wrong guess would be expensive to undo (API shape, data model, deleting things). For cheap choices (filenames, naming), decide and mention it.
+- Don't change anything I didn't ask you to change. Before editing, name the smallest file/function you plan to touch and why.
+- Before writing a fix, state the diagnosis in one sentence and confirm the root cause with evidence (log, payload, DB row, output). Don't build on an assumed premise.
+- Never report a check as passing unless it ran as its own command and you read the exit code directly, not through a pipe into grep or tail.
+- Separate what you measured directly from what you inferred from logs, dashboards, or notes. Mark inferred claims as "probably."
+- After two failed attempts, stop and tell me what you've ruled out and what's blocking you, instead of trying a third time.
+- Don't apologize. Fix it, tell me what changed, and if there was a clear reason for the mistake, say what it was.
+- Don't use reasoning for things a script or tool can do deterministically.
+- Preplan your tool calls and batch independent ones together; wait for all to return before reading any.
+- When reporting status, be extremely concise. Sacrifice grammar for concision.
+- When updating this file, replace outdated rules instead of adding new ones next to them.`;
+
 function renderMemory() {
   const list = document.getElementById("memory-list");
-  list.innerHTML = memory.length
+  const rec = memory.some((m) => m === WORKING_RULES) ? ""
+    : `<div class="mem-rec">💡 Recommended: working rules that make AIs more precise. <a href="#" id="mem-add-rules">Add working rules</a></div>`;
+  list.innerHTML = rec + (memory.length
     ? memory.map((m, i) => `<div class="mem-row"><span>${escapeHtml(m)}</span><a href="#" class="mem-copy" data-i="${i}">Copy</a><a href="#" class="mem-del" data-i="${i}">Remove</a></div>`).join("")
-    : `<p class="rb-empty">Nothing yet. Add a note above to reuse across your AIs.</p>`;
+    : `<p class="rb-empty">Nothing yet. Add a note above to reuse across your AIs.</p>`);
+  const addRules = document.getElementById("mem-add-rules");
+  if (addRules) addRules.onclick = (e) => { e.preventDefault(); memory.unshift(WORKING_RULES); window.api.setState({ memory }); renderMemory(); };
   list.querySelectorAll(".mem-copy").forEach((a) => a.onclick = (e) => { e.preventDefault(); try { navigator.clipboard.writeText(memory[+a.dataset.i]); } catch (x) {} a.textContent = "Copied"; setTimeout(() => a.textContent = "Copy", 1200); });
   list.querySelectorAll(".mem-del").forEach((a) => a.onclick = (e) => { e.preventDefault(); memory.splice(+a.dataset.i, 1); window.api.setState({ memory }); renderMemory(); });
 }
@@ -858,18 +910,30 @@ document.getElementById("update-check").onclick = async () => {
   document.getElementById("update-status").textContent = "Checking…";
   await window.api.checkUpdate();
 };
+let notifiedUpdateVersion = null;
+function markUpdateAvailable(version) {
+  const btn = document.getElementById("btn-settings");
+  if (btn) btn.classList.add("has-update");   // red dot on the gear
+  if (version && notifiedUpdateVersion !== version) {
+    notifiedUpdateVersion = version;
+    try { window.api.notify({ title: "UAI update available", body: `Version ${version} is ready — open Settings to install.` }); } catch (e) {}
+  }
+}
+function clearUpdateDot() { const btn = document.getElementById("btn-settings"); if (btn) btn.classList.remove("has-update"); }
+
 window.api.onUpdateStatus(({ status, info }) => {
   const s = document.getElementById("update-status");
   const installBtn = document.getElementById("update-install");
   if (!s) return;
   if (status === "checking") s.textContent = "Checking…";
-  else if (status === "available") s.textContent = `Downloading ${info && info.version ? "v" + info.version : "update"}…`;
+  else if (status === "available") { s.textContent = `Downloading ${info && info.version ? "v" + info.version : "update"}…`; markUpdateAvailable(info && info.version); }
   else if (status === "downloading") s.textContent = `Downloading… ${info ? info.percent : 0}%`;
-  else if (status === "none") s.textContent = "You're on the latest version.";
+  else if (status === "none") { s.textContent = "You're on the latest version."; clearUpdateDot(); }
   else if (status === "error") s.textContent = "Update check failed: " + (info && info.message ? info.message : "");
   else if (status === "ready") {
     s.textContent = `Update ${info && info.version ? "v" + info.version : ""} ready.`;
     if (installBtn) { installBtn.style.display = ""; installBtn.onclick = () => window.api.installUpdate(); }
+    markUpdateAvailable(info && info.version);
   }
 });
 function buildSettingsProviders() {

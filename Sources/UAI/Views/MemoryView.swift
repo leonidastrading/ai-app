@@ -5,6 +5,7 @@ import SwiftUI
 struct MemoryView: View {
     @EnvironmentObject private var memory: MemoryStore
     @EnvironmentObject private var index: ConversationIndex
+    @EnvironmentObject private var app: AppState
     @AppStorage(SettingsKey.shareMemory) private var sharing = true
     @State private var draft = ""
     @State private var editing: MemoryNote.ID?
@@ -56,15 +57,26 @@ struct MemoryView: View {
     }
 
     private var addNote: some View {
-        HStack {
-            TextField("Add something every AI should know, e.g. “I trade options and prefer short answers”",
-                      text: $draft)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(add)
-            Button("Remember", action: add)
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.pink)
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Add something every AI should know, e.g. “I trade options and prefer short answers”",
+                          text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                Button("Remember", action: add)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.pink)
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if !memory.notes.contains(where: { $0.text == ClaudeRules.workingRules }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb").foregroundStyle(.secondary)
+                    Text("Recommended: a set of working rules that make AIs more precise.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Add working rules") { memory.add(ClaudeRules.workingRules) }
+                        .buttonStyle(.link)
+                }
+            }
         }
     }
 
@@ -79,7 +91,8 @@ struct MemoryView: View {
                 Text("What your AIs know about you").font(.headline)
                 Spacer()
                 Button {
-                    Task { await memory.learnFromChats() }
+                    if hasKey { Task { await memory.learnFromChats() } }
+                    else { memory.lastError = "Add an Anthropic API key in Settings › Universal AI to use this." }
                 } label: {
                     if memory.learning {
                         HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Learning…") }
@@ -87,7 +100,7 @@ struct MemoryView: View {
                         Label("Learn from my chats", systemImage: "sparkles")
                     }
                 }
-                .disabled(!hasKey || memory.learning)
+                .disabled(memory.learning)
                 .help(hasKey
                       ? "Sends your 15 most recent captured chats to Claude to pick out lasting facts about you."
                       : "Add an Anthropic API key in Settings › Universal AI to use this.")
@@ -140,10 +153,14 @@ struct MemoryView: View {
                 .font(.callout).foregroundStyle(.secondary)
             HStack(spacing: 14) {
                 ForEach(Provider.all.filter { counts[$0.id] != nil }) { provider in
-                    HStack(spacing: 5) {
-                        ProviderIcon(provider: provider, size: 18)
-                        Text("\(counts[provider.id] ?? 0)").font(.callout.monospacedDigit())
+                    Button { app.go(.provider(provider.id)) } label: {
+                        HStack(spacing: 5) {
+                            ProviderIcon(provider: provider, size: 18)
+                            Text("\(counts[provider.id] ?? 0)").font(.callout.monospacedDigit())
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .help("Open \(provider.name)")
                 }
             }
         }

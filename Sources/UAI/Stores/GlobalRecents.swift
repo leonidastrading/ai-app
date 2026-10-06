@@ -5,7 +5,8 @@ import Foundation
 struct RecentAttachment: Codable, Hashable {
     var name: String
     var type: String?
-    var dataURL: String?
+    var dataURL: String?   // small inline thumbnail (images)
+    var url: String?       // Storage download URL for the original file
 }
 
 /// A prompt you sent to any AI — typed directly in that AI, or routed through

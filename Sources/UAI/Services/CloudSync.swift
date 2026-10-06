@@ -134,6 +134,7 @@ final class CloudSync: ObservableObject {
                     var ad: [String: Any] = ["name": a.name]
                     if let t = a.type { ad["type"] = t }
                     if let u = a.dataURL { ad["dataURL"] = u }
+                    if let u = a.url { ad["url"] = u }
                     return ad
                 }
             }
@@ -172,7 +173,7 @@ final class CloudSync: ObservableObject {
                 let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
                 let atts = (item["attachments"] as? [[String: Any]])?.compactMap { a -> RecentAttachment? in
                     guard let name = a["name"] as? String else { return nil }
-                    return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String)
+                    return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String, url: a["url"] as? String)
                 }
                 return RoutedPrompt(date: date, prompt: text, provider: ProviderID(rawValue: pid),
                                     reason: item["reason"] as? String ?? "",

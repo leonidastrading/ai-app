@@ -337,15 +337,19 @@ private struct RoutedMessage: View {
                     if let atts = entry.attachments, !atts.isEmpty {
                         HStack(spacing: 6) {
                             ForEach(Array(atts.prefix(5).enumerated()), id: \.offset) { _, a in
-                                if let s = a.dataURL, let data = Self.decode(s), let img = NSImage(data: data) {
-                                    Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
-                                        .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-                                } else {
-                                    HStack(spacing: 4) { Image(systemName: "paperclip"); Text(a.name).lineLimit(1) }
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6).padding(.vertical, 4)
-                                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                                Button { Self.open(a) } label: {
+                                    if let s = a.dataURL, let data = Self.decode(s), let img = NSImage(data: data) {
+                                        Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                                            .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                                    } else {
+                                        HStack(spacing: 4) { Image(systemName: "paperclip"); Text(a.name).lineLimit(1) }
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                            .padding(.horizontal, 6).padding(.vertical, 4)
+                                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                                    }
                                 }
+                                .buttonStyle(.plain)
+                                .help("Open \(a.name)")
                             }
                         }
                         .padding(.top, 2)
@@ -386,5 +390,19 @@ private struct RoutedMessage: View {
     private static func decode(_ s: String) -> Data? {
         guard let c = s.range(of: ",") else { return nil }
         return Data(base64Encoded: String(s[c.upperBound...]))
+    }
+
+    /// Open an attachment: the Storage URL in the browser (where it can be saved),
+    /// or the inline thumbnail written to a temp file and opened in Preview.
+    private static func open(_ a: RecentAttachment) {
+        if let u = a.url, let url = URL(string: u) { NSWorkspace.shared.open(url); return }
+        if let s = a.dataURL, let data = decode(s) {
+            let nameNS = a.name as NSString
+            let ext = nameNS.pathExtension.isEmpty ? "png" : nameNS.pathExtension
+            let stem = nameNS.deletingPathExtension.isEmpty ? "attachment" : nameNS.deletingPathExtension
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("\(stem).\(ext)")
+            try? data.write(to: tmp)
+            NSWorkspace.shared.open(tmp)
+        }
     }
 }
