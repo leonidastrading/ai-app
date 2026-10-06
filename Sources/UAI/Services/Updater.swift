@@ -12,25 +12,27 @@ import SwiftUI
 /// build. Before that (while you're still setting up signing), `isConfigured`
 /// is false, the updater never starts, and no error alert is shown on launch.
 @MainActor
-final class Updater: ObservableObject {
+final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
     @Published private(set) var canCheckForUpdates = false
+    /// True once Sparkle has found a newer version (drives the in-app badge).
+    @Published private(set) var updateAvailable = false
+    @Published private(set) var availableVersion = ""
 
     /// True when this build carries a Sparkle public key, so updates are live.
     let isConfigured: Bool
 
-    private let controller: SPUStandardUpdaterController?
+    private var controller: SPUStandardUpdaterController?
+    private var notifiedVersion = ""
 
-    init() {
+    override init() {
         let key = (Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         isConfigured = !key.isEmpty && key != "__SPARKLE_PUBKEY__"
+        super.init()
 
-        guard isConfigured else {
-            controller = nil
-            return
-        }
+        guard isConfigured else { return }
         let controller = SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
         self.controller = controller
         controller.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
@@ -39,6 +41,25 @@ final class Updater: ObservableObject {
 
     func checkForUpdates() {
         controller?.updater.checkForUpdates()
+    }
+
+    // MARK: - SPUUpdaterDelegate (detect a new version for the in-app badge)
+
+    nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        Task { @MainActor in
+            self.updateAvailable = true
+            self.availableVersion = version
+            if self.notifiedVersion != version {
+                self.notifiedVersion = version
+                Notifier.shared.announce(title: "UAI update available",
+                                         body: "Version \(version) is ready — it will install on the next relaunch, or update now from the toolbar.")
+            }
+        }
+    }
+
+    nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        Task { @MainActor in self.updateAvailable = false }
     }
 
     /// App version shown in Settings (e.g. "0.1.37").

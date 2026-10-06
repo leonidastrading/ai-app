@@ -52,6 +52,7 @@ struct UAIApp: App {
                 .environmentObject(recents)
                 .environmentObject(auth)
                 .environmentObject(cloud)
+                .environmentObject(updater)
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)

@@ -127,6 +127,7 @@ struct TopBar: ToolbarContent {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
     @EnvironmentObject private var cloud: CloudSync
+    @EnvironmentObject private var updater: Updater
 
     private func reloadCurrent() {
         if case .provider(let id) = app.destination { webViews.reload(id) }
@@ -150,6 +151,14 @@ struct TopBar: ToolbarContent {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            if updater.updateAvailable {
+                Button { updater.checkForUpdates() } label: {
+                    Label("Update \(updater.availableVersion)", systemImage: "arrow.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                }
+                .tint(.red)
+                .help("A new version of UAI is available — click to install")
+            }
             Button { app.toggleMemory() } label: {
                 Label("Memory", systemImage: "brain.head.profile")
                     .labelStyle(.titleAndIcon)

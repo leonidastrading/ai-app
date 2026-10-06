@@ -258,6 +258,29 @@ final class AuthStore: ObservableObject {
         } catch { return false }
     }
 
+    /// Upload a file to Firebase Storage and return a download URL (nil on failure).
+    func uploadAttachment(data: Data, name: String, mime: String) async -> String? {
+        guard let uid = account?.uid, let token = try? await validToken() else { return nil }
+        let bucket = CloudConfig.projectId + ".firebasestorage.app"
+        let safe = name.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "_", options: .regularExpression)
+        let path = "users/\(uid)/attachments/\(UUID().uuidString.prefix(8))-\(safe)"
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        guard let enc = path.addingPercentEncoding(withAllowedCharacters: allowed),
+              let url = URL(string: "https://firebasestorage.googleapis.com/v0/b/\(bucket)/o?name=\(enc)") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Firebase \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(mime, forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        do {
+            let (respData, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let obj = try? JSONSerialization.jsonObject(with: respData) as? [String: Any],
+                  let dlToken = obj["downloadTokens"] as? String else { return nil }
+            return "https://firebasestorage.googleapis.com/v0/b/\(bucket)/o/\(enc)?alt=media&token=\(dlToken)"
+        } catch { return nil }
+    }
+
     // MARK: - HTTP helpers
 
     private func postForm(url: String, body: String) async throws -> [String: Any] {

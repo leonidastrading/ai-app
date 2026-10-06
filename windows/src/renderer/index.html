@@ -69,6 +69,8 @@
               <div id="attachments"></div>
               <div class="universal-actions">
                 <button type="button" id="attach-btn" title="Attach image or file">📎 Attach</button>
+                <span style="flex:1 1 auto"></span>
+                <button type="button" id="send-uai-btn" title="Save to your Recent on every device, without routing">Send to UAI</button>
                 <button type="submit" id="universal-send">Route it</button>
               </div>
             </form>
@@ -108,7 +110,7 @@
             </section>
             <section>
               <h3>Universal AI routing</h3>
-              <p class="hint">Universal AI uses an Anthropic API key to pick the best AI for each request. Stored encrypted on this PC only.</p>
+              <p class="hint">Universal AI uses an Anthropic API key to pick the best AI for each request. Stored encrypted on this PC only. <a href="#" id="apikey-link">Get a key</a></p>
               <div class="row">
                 <input id="apikey" type="password" placeholder="sk-ant-…" />
                 <button id="apikey-save">Save key</button>

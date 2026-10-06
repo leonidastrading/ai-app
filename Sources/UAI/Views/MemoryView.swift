@@ -92,7 +92,7 @@ struct MemoryView: View {
                 Spacer()
                 Button {
                     if hasKey { Task { await memory.learnFromChats() } }
-                    else { memory.lastError = "Add an Anthropic API key in Settings › Universal AI to use this." }
+                    else { memory.lastError = "Add an Anthropic API key in Settings › Universal AI to use this. [Get a key](https://platform.claude.com/settings/keys)" }
                 } label: {
                     if memory.learning {
                         HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Learning…") }
@@ -106,7 +106,7 @@ struct MemoryView: View {
                       : "Add an Anthropic API key in Settings › Universal AI to use this.")
             }
             if let error = memory.lastError {
-                Text(error).font(.caption).foregroundStyle(.secondary)
+                Text(.init(error)).font(.caption).foregroundStyle(.secondary).tint(Theme.pink)
             }
             if memory.notes.isEmpty {
                 Text("Nothing yet. Add notes above\(hasKey ? " or let Claude learn them from your chats" : "").")

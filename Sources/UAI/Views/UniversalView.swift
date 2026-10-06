@@ -9,6 +9,7 @@ struct UniversalView: View {
     @EnvironmentObject private var webViews: WebViewStore
     @EnvironmentObject private var memory: MemoryStore
     @EnvironmentObject private var profile: Profile
+    @EnvironmentObject private var auth: AuthStore
     @AppStorage(SettingsKey.autoSend) private var autoSend = true
     @AppStorage(SettingsKey.shareMemory) private var shareMemory = true
 
@@ -130,6 +131,10 @@ struct UniversalView: View {
                 .menuStyle(.button)
                 .buttonStyle(.borderless)
                 .fixedSize()
+                Button { sendToUAI() } label: { Label("Send to UAI", systemImage: "sparkles") }
+                    .buttonStyle(.borderless)
+                    .help("Save this to your Recent on every device, without routing to an AI")
+                    .disabled(!canSend)
                 Spacer()
                 Toggle(isOn: $shareMemory) {
                     Label("Memory", systemImage: "brain.head.profile")
@@ -268,6 +273,48 @@ struct UniversalView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 10)
         }
+    }
+
+    /// Save the prompt + attachments to Recent (synced), without routing to an AI.
+    private func sendToUAI() {
+        absorbFilePaths()
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = attachments
+        guard (!text.isEmpty || !files.isEmpty), !sending else { return }
+        sending = true
+        draft = ""; attachments = []
+        Task {
+            var atts: [RecentAttachment] = []
+            for f in files {
+                var ra = RecentAttachment(name: f.name, type: f.mime, dataURL: Self.thumb(f), url: nil)
+                if let comma = f.dataURL.firstIndex(of: ","),
+                   let data = Data(base64Encoded: String(f.dataURL[f.dataURL.index(after: comma)...])) {
+                    ra.url = await auth.uploadAttachment(data: data, name: f.name, mime: f.mime)
+                }
+                atts.append(ra)
+            }
+            let logged = text.isEmpty ? "(attachment)" : text
+            universal.add(RoutedPrompt(date: Date(), prompt: logged, provider: ProviderID(rawValue: ""),
+                                       reason: "", routedBy: "UAI", attachments: atts.isEmpty ? nil : atts))
+            sending = false
+            app.show(toast: "Sent to UAI — saved to your Recent on every device")
+        }
+    }
+
+    /// A small JPEG data-URL thumbnail for an image attachment (nil otherwise).
+    private static func thumb(_ a: Attachment) -> String? {
+        guard a.isImage, let img = a.thumbnail else { return nil }
+        let maxDim: CGFloat = 320
+        let s = img.size
+        let scale = min(1, maxDim / max(s.width, s.height))
+        let w = max(1, s.width * scale), h = max(1, s.height * scale)
+        let out = NSImage(size: NSSize(width: w, height: h))
+        out.lockFocus()
+        img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+        out.unlockFocus()
+        guard let tiff = out.tiffRepresentation, let bmp = NSBitmapImageRep(data: tiff),
+              let jpeg = bmp.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else { return nil }
+        return "data:image/jpeg;base64," + jpeg.base64EncodedString()
     }
 
     private func send() {

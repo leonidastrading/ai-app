@@ -1,44 +1,35 @@
 import Foundation
-import Security
 
-/// Minimal Keychain wrapper for the optional Anthropic API key used by smart routing.
+/// Local secret store for the optional Anthropic API key.
+///
+/// NOT the login Keychain: an ad-hoc-signed app's code signature changes every
+/// build, so the Keychain pops a password prompt on every launch/read. These
+/// values live in 0600 files in the app's own Application Support folder, which
+/// is already protected by the user's account — no prompts.
 enum Keychain {
-    private static let service = "com.leonidastrading.uai"
+    static let anthropicKey = "anthropic-api-key"
+
+    private static var dir: URL {
+        Paths.ensure(Paths.appSupport.appendingPathComponent("secrets", isDirectory: true))
+    }
+    private static func file(_ account: String) -> URL {
+        dir.appendingPathComponent(account.replacingOccurrences(of: "/", with: "_"))
+    }
 
     static func read(_ account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let data = try? Data(contentsOf: file(account)),
+              let s = String(data: data, encoding: .utf8), !s.isEmpty else { return nil }
+        return s
     }
 
     static func write(_ value: String, for account: String) {
-        delete(account)
-        guard !value.isEmpty else { return }
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: Data(value.utf8),
-        ]
-        SecItemAdd(item as CFDictionary, nil)
+        if value.isEmpty { delete(account); return }
+        let url = file(account)
+        try? value.data(using: .utf8)?.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     static func delete(_ account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
+        try? FileManager.default.removeItem(at: file(account))
     }
-
-    static let anthropicKey = "anthropic-api-key"
 }

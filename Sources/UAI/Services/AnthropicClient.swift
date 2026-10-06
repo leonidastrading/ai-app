@@ -49,6 +49,9 @@ enum AnthropicClient {
         guard http.statusCode == 200 else {
             let detail = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
                 .flatMap { $0["error"] as? [String: Any] }?["message"] as? String
+            if let detail, detail.contains("not scoped to a workspace") {
+                throw APIError(message: "Your API key is Organization-scoped. Create a key with a “Default workspace” scope at platform.claude.com/settings/keys and paste that one.")
+            }
             throw APIError(message: "Anthropic API error \(http.statusCode)\(detail.map { ": \($0)" } ?? "")")
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

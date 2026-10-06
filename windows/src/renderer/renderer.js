@@ -609,6 +609,43 @@ async function runUniversal() {
 }
 document.getElementById("universal-form").addEventListener("submit", (e) => { e.preventDefault(); runUniversal(); });
 document.getElementById("universal-send").addEventListener("click", (e) => { e.preventDefault(); runUniversal(); });
+
+// Downscale an image data URL to a small JPEG thumbnail (keeps the synced blob small).
+function imgThumbFromDataURL(dataURL, max = 320, q = 0.7) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      try { c.getContext("2d").drawImage(img, 0, 0, w, h); resolve(c.toDataURL("image/jpeg", q)); } catch (e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataURL;
+  });
+}
+// Save the prompt + attachments to Recent (synced), without routing to an AI.
+async function sendToUAI() {
+  const input = document.getElementById("universal-input");
+  const text = (input.value || "").trim();
+  const files = attachments.slice();
+  if (!text && !files.length) return;
+  input.value = ""; attachments = []; renderAttachments();
+  const atts = [];
+  for (const f of files) {
+    const a = { name: f.name, type: f.type };
+    if ((f.type || "").startsWith("image/") && f.dataURL) { const t = await imgThumbFromDataURL(f.dataURL); if (t) a.thumb = t; }
+    atts.push(a);
+  }
+  const entry = { id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text || "(attachment)", providerId: "", at: Date.now(), attachments: atts };
+  recents.unshift(entry); recents = recents.slice(0, 80);
+  window.api.setState({ universalRecents: recents });
+  renderRecents();
+  pushRecentsMerged();
+  const st = document.getElementById("universal-status");
+  if (st) { st.textContent = "Sent to UAI — saved to your Recent on every device."; setTimeout(() => { if (st.textContent.startsWith("Sent to UAI")) st.textContent = ""; }, 2600); }
+}
+document.getElementById("send-uai-btn").addEventListener("click", (e) => { e.preventDefault(); sendToUAI(); });
 // Enter sends (Shift+Enter = new line). Both a direct and a capture handler so
 // it can't be missed on any platform.
 function onUniversalEnter(e) {
@@ -894,6 +931,10 @@ document.getElementById("apikey-save").onclick = async () => {
   document.getElementById("apikey").value = "";
   refreshApiKeyStatus();
 };
+{
+  const apikeyLink = document.getElementById("apikey-link");
+  if (apikeyLink) apikeyLink.onclick = (e) => { e.preventDefault(); window.api.openExternal("https://platform.claude.com/settings/keys"); };
+}
 
 // ---- profile settings ----
 let pendingPhoto = null;

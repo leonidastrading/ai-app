@@ -61,6 +61,34 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
         }
     }
 
+    /// A generic notification not tied to any AI (e.g. "update available").
+    func announce(title: String, body: String) {
+        guard isEnabled else { return }
+        DispatchQueue.main.async {
+            if self.soundEnabled { NSSound(named: "Glass")?.play() }
+            if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
+        }
+        if modernReady {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = soundEnabled ? .default : nil
+            let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(req) { [weak self] error in
+                if error != nil {
+                    self?.modernReady = false
+                    DispatchQueue.main.async {
+                        let n = NSUserNotification(); n.title = title; n.informativeText = body
+                        NSUserNotificationCenter.default.deliver(n)
+                    }
+                }
+            }
+        } else {
+            let n = NSUserNotification(); n.title = title; n.informativeText = body
+            NSUserNotificationCenter.default.deliver(n)
+        }
+    }
+
     private func deliverModern(provider: Provider, subtitle: String?, body: String) {
         let content = UNMutableNotificationContent()
         content.title = "\(provider.name) replied"
