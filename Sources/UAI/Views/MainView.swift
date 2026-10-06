@@ -8,6 +8,7 @@ struct MainView: View {
     @EnvironmentObject private var recents: GlobalRecents
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var cloud: CloudSync
+    @EnvironmentObject private var updater: Updater
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
