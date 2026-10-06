@@ -811,10 +811,14 @@ extension WebViewStore {
 
         if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
         if (!stop && !stopBusy) {
-          const grew = m.total > lastTotal || m.count > lastCount;
-          if (grew) { grow++; growSince = now; if (grow >= 3) growActive = true; }
-          else grow = 0;
-          if (growActive && now - growSince > 3000) { growActive = false; grow = 0; fire(m); }
+          // Any meaningful growth arms the "settling" timer — even a short reply
+          // that only grows for a moment. We require a real text delta (not a
+          // 1-char tick) so ordinary page churn doesn't trigger a notification.
+          const grew = (m.total - lastTotal) > 12 || m.count > lastCount;
+          if (grew) { growActive = true; growSince = now; }
+          // Reply is considered done once growth has settled ~1.8s. Works for
+          // quick replies (which never accumulated the old 3-sample streak).
+          if (growActive && now - growSince > 1800) { growActive = false; grow = 0; fire(m); }
         } else {
           grow = 0; growActive = false;
         }
