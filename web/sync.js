@@ -124,6 +124,22 @@
       .catch(function () {});
   }
 
+  // Show a visible, persistent banner when a cloud write fails (so a silent
+  // permission/rules error can't hide why Recent won't save).
+  function reportSyncError(e) {
+    var code = (e && (e.code || e.message)) || "unknown";
+    try { console.error("UAI cloud write failed:", e); } catch (x) {}
+    var b = document.getElementById("sync-err-banner");
+    if (!b) {
+      b = document.createElement("div");
+      b.id = "sync-err-banner";
+      b.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:3000;background:#7a1020;color:#fff;padding:10px 16px;font:13px system-ui;text-align:center";
+      document.body.appendChild(b);
+    }
+    b.textContent = "Cloud sync failed (" + code + "). Your Recent won't save across devices — check your Firestore security rules.";
+  }
+  function clearSyncError() { var b = document.getElementById("sync-err-banner"); if (b) b.remove(); }
+
   // Writes ONLY the recents field. Uses a transaction so a concurrent write
   // (another device) is merged, never overwritten.
   function pushRecents() {
@@ -139,11 +155,11 @@
         window.UAI_recents = merged; window.UAI_recentsJSON = JSON.stringify(merged);
         tx.set(docRef, { recents: JSON.stringify(merged), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
       });
-    }).catch(function () {
+    }).then(function () { clearSyncError(); }).catch(function (txErr) {
       // Fallback: plain write so a prompt is never lost if the transaction fails.
-      try {
-        docRef.set({ recents: JSON.stringify(window.UAI_recents || []), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(function () {});
-      } catch (e) {}
+      docRef.set({ recents: JSON.stringify(window.UAI_recents || []), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
+        .then(function () { clearSyncError(); })
+        .catch(function (setErr) { reportSyncError(setErr || txErr); });
     });
   }
 
