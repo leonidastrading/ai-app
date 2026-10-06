@@ -193,7 +193,8 @@ struct GlobalSearchField: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(width: 520, height: 26)
+        .padding(.vertical, 5)
+        .frame(minWidth: 200, idealWidth: 480, maxWidth: 520)
         .background(Theme.searchField, in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(focused ? 0.5 : 0.15)))
         .onChange(of: app.focusSearchTick) { focused = true }
