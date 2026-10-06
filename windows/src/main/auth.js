@@ -192,9 +192,11 @@ async function pullRecents() {
   try {
     const r = await request(docUrl(session.uid), { headers: { Authorization: "Bearer " + token } });
     const f = (r.json && r.json.fields) || {};
-    if (f.recents && f.recents.stringValue) { const a = JSON.parse(f.recents.stringValue); if (Array.isArray(a)) return a; }
-    if (f.data && f.data.stringValue) { const b = JSON.parse(f.data.stringValue); if (Array.isArray(b.recents)) return b.recents; }
-    return [];
+    // Union the new `recents` field AND the old in-blob location (migration-safe).
+    let out = [];
+    try { if (f.recents && f.recents.stringValue) { const a = JSON.parse(f.recents.stringValue); if (Array.isArray(a)) out = out.concat(a); } } catch (e) {}
+    try { if (f.data && f.data.stringValue) { const b = JSON.parse(f.data.stringValue); if (Array.isArray(b.recents)) out = out.concat(b.recents); } } catch (e) {}
+    return out;
   } catch (e) { return []; }
 }
 async function pushRecents(arr) {

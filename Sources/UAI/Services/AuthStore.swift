@@ -190,17 +190,19 @@ final class AuthStore: ObservableObject {
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let fields = obj["fields"] as? [String: Any] else { return [] }
+            // Union the new `recents` field AND the old in-blob location so the
+            // history is never lost during migration.
+            var result: [[String: Any]] = []
             if let rf = fields["recents"] as? [String: Any], let s = rf["stringValue"] as? String,
                let arr = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [[String: Any]] {
-                return arr
+                result += arr
             }
-            // migration fallback: old recents inside the data blob
             if let df = fields["data"] as? [String: Any], let s = df["stringValue"] as? String,
                let blob = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any],
                let arr = blob["recents"] as? [[String: Any]] {
-                return arr
+                result += arr
             }
-            return []
+            return result
         } catch { return [] }
     }
 

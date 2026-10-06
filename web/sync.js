@@ -131,9 +131,11 @@
     const local = window.UAI_recents || [];
     db.runTransaction(function (tx) {
       return tx.get(docRef).then(function (snap) {
-        let remote = [];
+        let remote = [], old = [];
         try { remote = JSON.parse((snap.exists && snap.data().recents) || "[]") || []; } catch (e) {}
-        const merged = mergeRecents(local.concat(remote));
+        // Migrate/keep the old in-blob recents too, so nothing is lost.
+        try { const b = JSON.parse((snap.exists && snap.data().data) || "{}") || {}; if (Array.isArray(b.recents)) old = b.recents; } catch (e) {}
+        const merged = mergeRecents(local.concat(remote).concat(old));
         window.UAI_recents = merged; window.UAI_recentsJSON = JSON.stringify(merged);
         tx.set(docRef, { recents: JSON.stringify(merged), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
       });
@@ -165,10 +167,12 @@
         try { blob = JSON.parse(d.data || "{}") || {}; } catch (e) {}
         lastBlob = blob;
         applyBlob(blob);
-        // Recents from their own field, falling back to the old in-blob location.
-        let remoteRecents = null;
-        try { remoteRecents = d.recents != null ? JSON.parse(d.recents) : (Array.isArray(blob.recents) ? blob.recents : null); } catch (e) {}
-        applyRecents(remoteRecents || []);
+        // Union BOTH the new recents field AND the old in-blob location so the
+        // history is never lost during/after migration.
+        let newField = [], oldField = [];
+        try { newField = d.recents != null ? (JSON.parse(d.recents) || []) : []; } catch (e) {}
+        try { oldField = Array.isArray(blob.recents) ? blob.recents : []; } catch (e) {}
+        applyRecents(newField.concat(oldField));
       } else { lastBlob = {}; push(); }
     }, function () {});
   });
