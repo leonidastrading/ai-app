@@ -265,21 +265,35 @@ document.getElementById("send-uai-btn").onclick = async () => {
   const pending = askAttachments.slice();
   document.getElementById("ask").value = "";
   askAttachments = []; renderAskAttachments();
-  btn.disabled = true;
-  let attachments = [];
-  try { attachments = await Promise.all(pending.map(uploadAttachment)); } catch (e) { attachments = pending.map((a) => ({ name: a.name, type: a.type, thumb: a.thumb })); }
-  btn.disabled = false;
-  // "Send to UAI" is not routed to any AI — it's just saved to your Recent.
-  // Use "" (not null) so the desktop apps' JSON parsers keep the entry.
-  const entry = {
-    id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    text: text || "(attachment)",
-    providerId: "",
-    at: Date.now(),
-    attachments,
+
+  // Save to Recent IMMEDIATELY with local previews, so it always shows up (and
+  // syncs) even if the Storage upload is slow, fails, or Storage isn't set up.
+  // "Send to UAI" isn't routed to any AI — providerId is "" (not null) so the
+  // desktop apps' JSON parsers keep the entry.
+  const saveRecent = (atts) => {
+    const entry = {
+      id: entryId, text: text || "(attachment)", providerId: "", at: when, attachments: atts,
+    };
+    try { window.UAI_sync && window.UAI_sync.addRecent && window.UAI_sync.addRecent(entry); } catch (e) {}
   };
-  try { window.UAI_sync && window.UAI_sync.addRecent && window.UAI_sync.addRecent(entry); } catch (e) {}
+  const entryId = "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const when = Date.now();
+  saveRecent(pending.map((a) => ({ name: a.name, type: a.type, thumb: a.thumb })));
   toast("Sent to UAI — saved to your Recent on every signed-in device");
+
+  // Upload the originals in the background (with a timeout so a misconfigured
+  // Storage can't hang anything); re-save with the download URLs if we get them.
+  if (pending.length) {
+    btn.disabled = true;
+    try {
+      const uploaded = await Promise.all(pending.map((a) => Promise.race([
+        uploadAttachment(a),
+        new Promise((res) => setTimeout(() => res({ name: a.name, type: a.type, thumb: a.thumb }), 20000)),
+      ])));
+      if (uploaded.some((u) => u && u.url)) saveRecent(uploaded);  // same id/time → de-dupes, keeps the URL version
+    } catch (e) { /* previews already saved */ }
+    btn.disabled = false;
+  }
 };
 
 // Open an attachment: images enlarge in a lightbox (with Download); other files
