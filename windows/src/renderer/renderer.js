@@ -19,11 +19,10 @@ let memory = [];           // user's reusable notes
 let currentUser = null;
 let applyingRemote = false;
 let pushTimer = null;
-// blob key -> local state key
+// blob key -> local state key (recents are synced separately, in their own field)
 const SYNC_MAP = {
   custom: "customProviders",
   memory: "memory",
-  recents: "universalRecents",
   profile: "profile",
   railOrder: "railOrder",
   hidden: "hiddenProviders",
@@ -83,12 +82,9 @@ async function syncPullIntoState() {
   let blob = {};
   try { blob = (await window.api.syncPull()) || {}; } catch (e) {}
   const patch = {};
-  let localRecents = [];
-  try { localRecents = (await window.api.getState()).universalRecents || []; } catch (e) {}
   for (const bk in SYNC_MAP) {
     const v = blob[bk];
     if (bk === "profile") { if (v && typeof v === "object") patch.profile = v; }
-    else if (bk === "recents") { if (Array.isArray(v)) patch.universalRecents = mergeRecents(v.concat(localRecents)); }
     else if (Array.isArray(v)) patch[SYNC_MAP[bk]] = v;
   }
   // First sign-in with nothing stored yet: seed the profile from the Google account.
@@ -102,6 +98,33 @@ async function syncPullIntoState() {
     applyingRemote = true;
     try { await window.api.setState(patch); } finally { applyingRemote = false; }
   }
+}
+
+// Recents are synced in their own field. Pull + merge into local, and render.
+async function pullRecentsMerge() {
+  if (!currentUser) return;
+  try {
+    const remote = await window.api.syncPullRecents();
+    const st = await window.api.getState();
+    const merged = mergeRecents((Array.isArray(remote) ? remote : []).concat(st.universalRecents || []));
+    applyingRemote = true;
+    try { await window.api.setState({ universalRecents: merged }); } finally { applyingRemote = false; }
+    recents = merged;
+    renderRecents();
+  } catch (e) {}
+}
+// Push local recents merged with the current remote (never clobbers another device).
+async function pushRecentsMerged() {
+  if (!currentUser) return;
+  try {
+    const st = await window.api.getState();
+    const remote = await window.api.syncPullRecents();
+    const merged = mergeRecents((st.universalRecents || []).concat(Array.isArray(remote) ? remote : []));
+    applyingRemote = true;
+    try { await window.api.setState({ universalRecents: merged }); } finally { applyingRemote = false; }
+    recents = merged;
+    await window.api.syncPushRecents(merged);
+  } catch (e) {}
 }
 
 function scheduleSyncPush() {
@@ -148,6 +171,7 @@ async function boot() {
   await ensureSignedIn();      // blocks on the sign-in gate until Google sign-in succeeds
   renderAccount();
   await syncPullIntoState();   // bring this account's cloud data down before first render
+  await pullRecentsMerge();    // recents live in their own field
   const state = await window.api.getState();
   recents = state.universalRecents || [];
   notifications = state.notifications || [];
@@ -172,12 +196,7 @@ async function boot() {
   // up without a restart.
   setInterval(async () => {
     if (!currentUser) return;
-    try {
-      await syncPullIntoState();
-      const st = await window.api.getState();
-      recents = st.universalRecents || [];
-      renderRecents();
-    } catch (e) {}
+    try { await syncPullIntoState(); await pullRecentsMerge(); } catch (e) {}
   }, 20000);
 }
 
@@ -649,10 +668,11 @@ function playChime() {
 
 function addRecent(text, providerId) {
   recents.unshift({ text, providerId, at: Date.now() });
-  recents = recents.slice(0, 12);
+  recents = recents.slice(0, 80);
   window.api.setState({ universalRecents: recents });
   renderRecents();
   renderRightBar();
+  pushRecentsMerged();   // sync to the shared recents field
 }
 function renderRecents() {
   const box = document.getElementById("universal-recents");

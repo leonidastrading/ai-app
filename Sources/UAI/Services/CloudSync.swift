@@ -28,8 +28,8 @@ final class CloudSync: ObservableObject {
 
     /// Pull the account's cloud blob into local state, then start watching for changes.
     func startAfterSignIn() async {
-        let blob = await auth.pull()
-        applyBlob(blob)
+        applyBlob(await auth.pull())
+        applyRecents(await auth.pullRecents())
         if !started { watchForChanges(); startPolling(); started = true }
         // Seed the profile name/photo from Google on first sign-in if we have nothing.
         if profile.name.isEmpty, let acct = auth.account, !acct.name.isEmpty {
@@ -42,13 +42,14 @@ final class CloudSync: ObservableObject {
         }
         // Make sure the cloud has our current state (first run / merge).
         schedulePush()
+        pushRecentsMerged()
     }
 
     /// Manually pull and apply the latest cloud data (e.g. the Reload button).
     func refresh() async {
         guard auth.isSignedIn else { return }
-        let blob = await auth.pull()
-        applyBlob(blob)
+        applyBlob(await auth.pull())
+        applyRecents(await auth.pullRecents())
     }
 
     func signOut() {
@@ -66,7 +67,7 @@ final class CloudSync: ObservableObject {
             profile.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
         ])
         .debounce(for: .seconds(1.2), scheduler: RunLoop.main)
-        .sink { [weak self] in self?.schedulePush() }
+        .sink { [weak self] in self?.schedulePush(); self?.pushRecentsMerged() }
         .store(in: &cancellables)
     }
 
@@ -76,24 +77,71 @@ final class CloudSync: ObservableObject {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.auth.isSignedIn else { return }
-                let blob = await self.auth.pull()
-                self.applyBlob(blob)
+                self.applyBlob(await self.auth.pull())
+                self.applyRecents(await self.auth.pullRecents())
             }
         }
     }
 
     private func schedulePush() {
         guard auth.isSignedIn, Date() > suppressUntil else { return }
+        Task { await auth.push(buildBlob()) }   // data blob only — never recents
+    }
+
+    /// Push recents into their own field, merged with the current remote so a
+    /// concurrent write from another device is never lost.
+    private func pushRecentsMerged() {
+        guard auth.isSignedIn else { return }
         Task {
-            var blob = buildBlob()
-            // Merge recents with the current remote so we never drop entries another
-            // device added (e.g. "Send to UAI" from the web) while this app was open.
-            let remote = await auth.pull()
-            if let remoteRecents = remote["recents"] as? [[String: Any]] {
-                blob["recents"] = Self.mergeRawRecents((blob["recents"] as? [[String: Any]] ?? []) + remoteRecents)
-            }
-            await auth.push(blob)
+            let local = universal.history.prefix(60).map { Self.recentDict($0) }
+            let remote = await auth.pullRecents()
+            await auth.pushRecents(Self.mergeRawRecents(local + remote))
         }
+    }
+
+    private static func recentDict(_ r: RoutedPrompt) -> [String: Any] {
+        var d: [String: Any] = ["text": r.prompt, "providerId": r.provider.rawValue,
+                                "at": Int(r.date.timeIntervalSince1970 * 1000),
+                                "reason": r.reason, "routedBy": r.routedBy]
+        if let atts = r.attachments, !atts.isEmpty {
+            d["attachments"] = atts.map { a -> [String: Any] in
+                var ad: [String: Any] = ["name": a.name]
+                if let t = a.type { ad["type"] = t }
+                if let u = a.dataURL { ad["dataURL"] = u }
+                if let u = a.url { ad["url"] = u }
+                return ad
+            }
+        }
+        return d
+    }
+
+    /// Apply a remote recents array into the Universal history (merged with local).
+    private func applyRecents(_ remote: [[String: Any]]) {
+        guard !remote.isEmpty || !universal.history.isEmpty else { return }
+        suppressUntil = Date().addingTimeInterval(3)
+        let incoming = remote.compactMap { Self.routedPrompt(from: $0) }
+        var seen = Set<String>(); var merged: [RoutedPrompt] = []
+        for r in incoming + universal.history {
+            let key = Self.recentKey(providerId: r.provider.rawValue, at: Int(r.date.timeIntervalSince1970 * 1000), text: r.prompt)
+            if seen.contains(key) { continue }
+            seen.insert(key); merged.append(r)
+        }
+        merged.sort { $0.date > $1.date }
+        universal.replaceAll(Array(merged.prefix(200)))
+    }
+
+    private static func routedPrompt(from item: [String: Any]) -> RoutedPrompt? {
+        guard let text = item["text"] as? String else { return nil }
+        let pid = item["providerId"] as? String ?? ""
+        let ms = (item["at"] as? Double) ?? Double(item["at"] as? Int ?? 0)
+        let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
+        let atts = (item["attachments"] as? [[String: Any]])?.compactMap { a -> RecentAttachment? in
+            guard let name = a["name"] as? String else { return nil }
+            return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String, url: a["url"] as? String)
+        }
+        return RoutedPrompt(date: date, prompt: text, provider: ProviderID(rawValue: pid),
+                            reason: item["reason"] as? String ?? "",
+                            routedBy: item["routedBy"] as? String ?? "UAI", attachments: atts)
     }
 
     private static func recentKey(providerId: String, at: Any?, text: String) -> String {
@@ -125,21 +173,7 @@ final class CloudSync: ObservableObject {
             ["id": $0.id, "name": $0.name, "url": $0.url, "strengths": $0.strengths]
         }
         blob["memory"] = memory.allTexts
-        blob["recents"] = universal.history.prefix(60).map { r -> [String: Any] in
-            var d: [String: Any] = ["text": r.prompt, "providerId": r.provider.rawValue,
-                                    "at": Int(r.date.timeIntervalSince1970 * 1000),
-                                    "reason": r.reason, "routedBy": r.routedBy]
-            if let atts = r.attachments, !atts.isEmpty {
-                d["attachments"] = atts.map { a -> [String: Any] in
-                    var ad: [String: Any] = ["name": a.name]
-                    if let t = a.type { ad["type"] = t }
-                    if let u = a.dataURL { ad["dataURL"] = u }
-                    if let u = a.url { ad["url"] = u }
-                    return ad
-                }
-            }
-            return d
-        }
+        // recents are synced in their own field (see pushRecentsMerged), not here.
         blob["railOrder"] = registry.order
         blob["hidden"] = registry.all.map(\.id.rawValue).filter { isHidden($0) }
         var profileDict: [String: Any] = ["name": profile.name]
@@ -165,30 +199,7 @@ final class CloudSync: ObservableObject {
             memory.replaceAllTexts(memoryTexts)
         }
 
-        if let recentsArr = blob["recents"] as? [[String: Any]] {
-            let incoming = recentsArr.compactMap { item -> RoutedPrompt? in
-                guard let text = item["text"] as? String else { return nil }
-                let pid = item["providerId"] as? String ?? ""   // "" = sent to UAI, not routed
-                let ms = (item["at"] as? Double) ?? Double(item["at"] as? Int ?? 0)
-                let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
-                let atts = (item["attachments"] as? [[String: Any]])?.compactMap { a -> RecentAttachment? in
-                    guard let name = a["name"] as? String else { return nil }
-                    return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String, url: a["url"] as? String)
-                }
-                return RoutedPrompt(date: date, prompt: text, provider: ProviderID(rawValue: pid),
-                                    reason: item["reason"] as? String ?? "",
-                                    routedBy: item["routedBy"] as? String ?? "UAI", attachments: atts)
-            }
-            // Merge with whatever is local so a pull never drops local-only entries.
-            var seen = Set<String>(); var merged: [RoutedPrompt] = []
-            for r in incoming + universal.history {
-                let key = Self.recentKey(providerId: r.provider.rawValue, at: Int(r.date.timeIntervalSince1970 * 1000), text: r.prompt)
-                if seen.contains(key) { continue }
-                seen.insert(key); merged.append(r)
-            }
-            merged.sort { $0.date > $1.date }
-            universal.replaceAll(Array(merged.prefix(200)))
-        }
+        // recents are applied by applyRecents from their own field, not here.
 
         if let order = blob["railOrder"] as? [String] {
             registry.setOrder(order)

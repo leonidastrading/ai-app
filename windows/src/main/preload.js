@@ -39,4 +39,6 @@ contextBridge.exposeInMainWorld("api", {
   authSignOut: () => ipcRenderer.invoke("auth:signOut"),
   syncPull: () => ipcRenderer.invoke("sync:pull"),
   syncPush: (blob) => ipcRenderer.invoke("sync:push", blob),
+  syncPullRecents: () => ipcRenderer.invoke("sync:pullRecents"),
+  syncPushRecents: (arr) => ipcRenderer.invoke("sync:pushRecents", arr),
 });

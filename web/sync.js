@@ -101,16 +101,19 @@
           if (localStorage.getItem(KEYS[k]) !== next) { localStorage.setItem(KEYS[k], next); changed = true; }
         }
       }
-      // Recent prompts from every app. Merge remote with anything added locally
-      // (e.g. just "Sent to UAI") so an unrelated snapshot can't drop it.
-      const remoteRecents = Array.isArray(blob && blob.recents) ? blob.recents : [];
-      const mergedRecents = mergeRecents(remoteRecents.concat(window.UAI_recents || []));
-      const recentsNext = JSON.stringify(mergedRecents);
-      if (window.UAI_recentsJSON !== recentsNext) { window.UAI_recentsJSON = recentsNext; window.UAI_recents = mergedRecents; changed = true; }
       if (changed) rerender();
     } catch (e) {} finally { applyingRemote = false; }
   }
 
+  // Recents live in their OWN Firestore field, so custom-AI / hide / memory
+  // writes can never clobber them. Merge remote with anything added locally.
+  function applyRecents(remoteRecents) {
+    const mergedRecents = mergeRecents((Array.isArray(remoteRecents) ? remoteRecents : []).concat(window.UAI_recents || []));
+    const recentsNext = JSON.stringify(mergedRecents);
+    if (window.UAI_recentsJSON !== recentsNext) { window.UAI_recentsJSON = recentsNext; window.UAI_recents = mergedRecents; rerender(); }
+  }
+
+  // Writes ONLY the data field (custom/hidden/…) — never touches recents.
   function push() {
     if (!docRef || applyingRemote) return;
     const blob = Object.assign({}, lastBlob);
@@ -121,18 +124,26 @@
       .catch(function () {});
   }
 
+  // Writes ONLY the recents field. Uses a transaction so a concurrent write
+  // (another device) is merged, never overwritten.
+  function pushRecents() {
+    if (!docRef) return;
+    const local = window.UAI_recents || [];
+    db.runTransaction(function (tx) {
+      return tx.get(docRef).then(function (snap) {
+        let remote = [];
+        try { remote = JSON.parse((snap.exists && snap.data().recents) || "[]") || []; } catch (e) {}
+        const merged = mergeRecents(local.concat(remote));
+        window.UAI_recents = merged; window.UAI_recentsJSON = JSON.stringify(merged);
+        tx.set(docRef, { recents: JSON.stringify(merged), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      });
+    }).catch(function () {});
+  }
+
   // Add an entry to Recent and sync it so it shows on every signed-in device.
   function addRecent(entry) {
-    localAddRecent(entry);                    // update local UI immediately
-    if (!docRef) return;
-    const blob = Object.assign({}, lastBlob);
-    for (const k in KEYS) {
-      try { const v = JSON.parse(localStorage.getItem(KEYS[k]) || "null"); if (v != null) blob[k] = v; } catch (e) {}
-    }
-    blob.recents = window.UAI_recents;        // the merged list we just computed
-    lastBlob = blob;
-    docRef.set({ data: JSON.stringify(blob), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
-      .catch(function () {});
+    localAddRecent(entry);   // update local UI immediately
+    pushRecents();
   }
 
   window.UAI_sync = { push: push, addRecent: addRecent, configured: true };
@@ -144,10 +155,15 @@
     docRef = db.collection("users").doc(user.uid);
     docRef.onSnapshot(function (snap) {
       if (snap.exists) {
+        const d = snap.data() || {};
         let blob = {};
-        try { blob = JSON.parse((snap.data() || {}).data || "{}") || {}; } catch (e) {}
+        try { blob = JSON.parse(d.data || "{}") || {}; } catch (e) {}
         lastBlob = blob;
         applyBlob(blob);
+        // Recents from their own field, falling back to the old in-blob location.
+        let remoteRecents = null;
+        try { remoteRecents = d.recents != null ? JSON.parse(d.recents) : (Array.isArray(blob.recents) ? blob.recents : null); } catch (e) {}
+        applyRecents(remoteRecents || []);
       } else { lastBlob = {}; push(); }
     }, function () {});
   });

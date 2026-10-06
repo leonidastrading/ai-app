@@ -311,6 +311,8 @@ ipcMain.handle("auth:signIn", async () => {
 ipcMain.handle("auth:signOut", () => { auth.signOut(); return true; });
 ipcMain.handle("sync:pull", () => auth.pull());
 ipcMain.handle("sync:push", (_e, blob) => auth.push(blob));
+ipcMain.handle("sync:pullRecents", () => auth.pullRecents());
+ipcMain.handle("sync:pushRecents", (_e, arr) => auth.pushRecents(arr));
 
 // Put an image on the system clipboard so it can be pasted into an AI's
 // composer (the most reliable way to forward an attached image — ChatGPT,

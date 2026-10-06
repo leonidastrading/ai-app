@@ -178,6 +178,57 @@ final class AuthStore: ObservableObject {
         } catch { return [:] }
     }
 
+    /// Recents live in their own `recents` field (falling back to the old
+    /// in-blob location) so data-blob writes can't clobber them.
+    func pullRecents() async -> [[String: Any]] {
+        guard let uid = account?.uid else { return [] }
+        do {
+            let token = try await validToken()
+            var req = URLRequest(url: URL(string: docURL(uid))!)
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let fields = obj["fields"] as? [String: Any] else { return [] }
+            if let rf = fields["recents"] as? [String: Any], let s = rf["stringValue"] as? String,
+               let arr = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [[String: Any]] {
+                return arr
+            }
+            // migration fallback: old recents inside the data blob
+            if let df = fields["data"] as? [String: Any], let s = df["stringValue"] as? String,
+               let blob = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any],
+               let arr = blob["recents"] as? [[String: Any]] {
+                return arr
+            }
+            return []
+        } catch { return [] }
+    }
+
+    @discardableResult
+    func pushRecents(_ arr: [[String: Any]]) async -> Bool {
+        guard let uid = account?.uid else { return false }
+        do {
+            let token = try await validToken()
+            let s = String(data: try JSONSerialization.data(withJSONObject: arr), encoding: .utf8) ?? "[]"
+            let fields: [String: Any] = ["fields": [
+                "recents": ["stringValue": s],
+                "updatedAt": ["timestampValue": ISO8601DateFormatter().string(from: Date())],
+            ]]
+            var comps = URLComponents(string: docURL(uid))!
+            comps.queryItems = [
+                URLQueryItem(name: "updateMask.fieldPaths", value: "recents"),
+                URLQueryItem(name: "updateMask.fieldPaths", value: "updatedAt"),
+            ]
+            var req = URLRequest(url: comps.url!)
+            req.httpMethod = "PATCH"
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: fields)
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            return (resp as? HTTPURLResponse)?.statusCode == 200
+        } catch { return false }
+    }
+
     /// Upload the full synced data blob.
     @discardableResult
     func push(_ blob: [String: Any]) async -> Bool {

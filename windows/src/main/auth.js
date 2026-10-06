@@ -184,4 +184,28 @@ async function push(blob) {
   } catch (e) { return false; }
 }
 
-module.exports = { signIn, signOut, restore, current: publicSession, pull, push };
+// Recents live in their own `recents` field (falling back to the old in-blob
+// location) so data-blob writes never clobber them.
+async function pullRecents() {
+  const token = await validToken();
+  if (!token || !session) return [];
+  try {
+    const r = await request(docUrl(session.uid), { headers: { Authorization: "Bearer " + token } });
+    const f = (r.json && r.json.fields) || {};
+    if (f.recents && f.recents.stringValue) { const a = JSON.parse(f.recents.stringValue); if (Array.isArray(a)) return a; }
+    if (f.data && f.data.stringValue) { const b = JSON.parse(f.data.stringValue); if (Array.isArray(b.recents)) return b.recents; }
+    return [];
+  } catch (e) { return []; }
+}
+async function pushRecents(arr) {
+  const token = await validToken();
+  if (!token || !session) return false;
+  const url = docUrl(session.uid) + "?updateMask.fieldPaths=recents&updateMask.fieldPaths=updatedAt";
+  const body = { fields: { recents: { stringValue: JSON.stringify(Array.isArray(arr) ? arr : []) }, updatedAt: { timestampValue: new Date().toISOString() } } };
+  try {
+    await request(url, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body });
+    return true;
+  } catch (e) { return false; }
+}
+
+module.exports = { signIn, signOut, restore, current: publicSession, pull, push, pullRecents, pushRecents };
