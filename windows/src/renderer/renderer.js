@@ -1,8 +1,13 @@
 "use strict";
 
-// Never fail silently to a blank window. Any uncaught error or rejected
-// promise during startup (or later) is shown on screen with its source and
-// line, so "the app is blank" becomes a readable, fixable message instead.
+// Set true once the app has rendered (end of boot). Before that, an uncaught
+// error means a broken startup → show the full-screen diagnostic so a blank
+// window can never hide its cause. AFTER that, a stray error (e.g. a webview
+// method called a hair too early) must NOT blank a working app — just log it
+// and show a small, dismissable toast.
+let booted = false;
+
+// Full-screen diagnostic — ONLY used for startup failures.
 function showFatal(msg, where) {
   try {
     let o = document.getElementById("fatal-overlay");
@@ -19,13 +24,38 @@ function showFatal(msg, where) {
       "Please send this text so it can be fixed.";
   } catch (e) { /* last resort: nothing more we can do */ }
 }
+
+// Small transient toast — used for post-startup errors; never blanks the app.
+function showErrorToast(msg) {
+  try {
+    let t = document.getElementById("error-toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "error-toast";
+      t.style.cssText = "position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:99999;" +
+        "max-width:80vw;background:#3a1020;color:#ffd7e4;border:1px solid #7a1836;border-radius:8px;" +
+        "padding:10px 14px;font:12px system-ui,Segoe UI,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5)";
+      (document.body || document.documentElement).appendChild(t);
+    }
+    t.textContent = "Something hiccuped: " + String(msg);
+    t.style.display = "";
+    clearTimeout(t.__timer);
+    t.__timer = setTimeout(() => { t.style.display = "none"; }, 4000);
+  } catch (e) {}
+}
+
+function reportError(msg, where) {
+  try { console.error("UAI error:", msg, where || ""); } catch (e) {}
+  if (booted) showErrorToast(msg); else showFatal(msg, where);
+}
+
 window.addEventListener("error", (e) => {
-  showFatal((e && e.message) || "Unknown error",
+  reportError((e && e.message) || "Unknown error",
     e && e.filename ? e.filename.split(/[\\/]/).pop() + ":" + e.lineno + ":" + e.colno : "");
 });
 window.addEventListener("unhandledrejection", (e) => {
   const r = e && e.reason;
-  showFatal((r && (r.stack || r.message)) || String(r) || "Unhandled promise rejection", "(async)");
+  reportError((r && (r.stack || r.message)) || String(r) || "Unhandled promise rejection", "(async)");
 });
 
 const paneWebviews = document.getElementById("pane-webviews");
@@ -227,6 +257,10 @@ async function boot() {
   safe("buildSettingsProviders", buildSettingsProviders);
   safe("renderMediaTabs", renderMediaTabs);
 
+  // App is up and rendered — from here, a stray error shows a toast, not a
+  // full-screen "startup failed" overlay that would blank a working app.
+  booted = true;
+
   window.api.onMediaChanged(() => { if (current === "__media__") loadMedia(); });
   window.api.onOpenProvider((id) => { if (id) select(id); });
 
@@ -358,6 +392,11 @@ function ensureWebview(id, initialURL) {
   paneWebviews.appendChild(wv);
   webviews[id] = wv;
 
+  // Electron <webview> methods like executeJavaScript/setZoomLevel throw
+  // ("must be attached to the DOM and the dom-ready event emitted") until the
+  // guest page is ready. Track that so callers can wait instead of throwing.
+  wv.__ready = false;
+  wv.addEventListener("dom-ready", () => { wv.__ready = true; });
   wv.addEventListener("ipc-message", (e) => onWebviewMessage(id, e));
   wv.addEventListener("page-title-updated", () => { /* could index here later */ });
   // Links an AI opens in a new tab/window → default browser (unless it's the
@@ -473,15 +512,22 @@ function deliver(id, text, files, forceInject) {
   const others = files.filter((f) => !(f.type || "").startsWith("image/"));
   const autoSend = files.length === 0;   // don't auto-send while anything is attached
   let n = 0, forwarded = false;
+  const retry = () => { if (++n < 30) setTimeout(tryInject, 500); };
   const tryInject = () => {
-    wv.executeJavaScript(deliverScript(text, others, n >= 24, autoSend)).then((ok) => {
+    // executeJavaScript throws synchronously if the webview isn't dom-ready yet,
+    // so guard it — otherwise the throw escapes and blanks the app.
+    let p;
+    try { p = wv.executeJavaScript(deliverScript(text, others, n >= 24, autoSend)); }
+    catch (e) { retry(); return; }
+    p.then((ok) => {
       if (ok) {
         if (images.length && !forwarded) { forwarded = true; setTimeout(() => forwardImages(wv, images, 0), 500); }
-      } else if (++n < 30) setTimeout(tryInject, 500);
-    }).catch(() => { if (++n < 30) setTimeout(tryInject, 500); });
+      } else retry();
+    }).catch(retry);
   };
-  if (wv.isLoading && wv.isLoading()) wv.addEventListener("dom-ready", () => setTimeout(tryInject, 400), { once: true });
-  else setTimeout(tryInject, 400);
+  // Wait for the guest page to be ready before injecting.
+  if (wv.__ready) setTimeout(tryInject, 400);
+  else wv.addEventListener("dom-ready", () => setTimeout(tryInject, 400), { once: true });
 }
 
 // Paste attached images into the AI's composer, one at a time, via the real
@@ -490,7 +536,9 @@ function forwardImages(wv, images, i) {
   if (!wv || i >= images.length) return;
   window.api.writeClipboardImage(images[i].dataURL).then((ok) => {
     const focusBox = `(() => { const v=el=>{const r=el.getBoundingClientRect();return r.width>80&&r.height>12&&el.offsetParent!==null;}; const b=[...document.querySelectorAll('textarea,[contenteditable="true"],div[role="textbox"]')].filter(v); if(!b.length) return false; b.sort((x,y)=>y.getBoundingClientRect().bottom-x.getBoundingClientRect().bottom); b[0].focus(); return true; })()`;
-    wv.executeJavaScript(focusBox).then(() => {
+    let p;
+    try { p = wv.executeJavaScript(focusBox); } catch (e) { return; }
+    p.then(() => {
       setTimeout(() => {
         try { wv.focus(); } catch (e) {}
         try { wv.paste(); } catch (e) {}
@@ -1145,9 +1193,12 @@ document.getElementById("rail-universal").onclick = () => select("__universal__"
 window.addEventListener("keydown", (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;
   const wv = activeWebview();
-  if (e.key === "=" || e.key === "+") { if (wv) wv.setZoomLevel(wv.getZoomLevel() + 0.5); e.preventDefault(); }
-  else if (e.key === "-") { if (wv) wv.setZoomLevel(wv.getZoomLevel() - 0.5); e.preventDefault(); }
-  else if (e.key === "0") { if (wv) wv.setZoomLevel(0); e.preventDefault(); }
+  if (!wv || !wv.__ready) return;   // zoom methods throw before dom-ready
+  try {
+    if (e.key === "=" || e.key === "+") { wv.setZoomLevel(wv.getZoomLevel() + 0.5); e.preventDefault(); }
+    else if (e.key === "-") { wv.setZoomLevel(wv.getZoomLevel() - 0.5); e.preventDefault(); }
+    else if (e.key === "0") { wv.setZoomLevel(0); e.preventDefault(); }
+  } catch (x) {}
 });
 
 // refresh nav button state periodically (webview nav changes aren't all evented)
