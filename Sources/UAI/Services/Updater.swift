@@ -37,6 +37,12 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
         controller.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: RunLoop.main)
             .assign(to: &$canCheckForUpdates)
+        // Silently check a few seconds after launch (Sparkle's own schedule is
+        // hourly), so the in-app "Update available" badge/notification appears
+        // promptly when a newer build exists. Shows UI only if one is found.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak controller] in
+            controller?.updater.checkForUpdatesInBackground()
+        }
     }
 
     func checkForUpdates() {
