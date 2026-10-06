@@ -58,18 +58,21 @@ const SYNC_MAP = {
 const SYNC_STATE_KEYS = Object.values(SYNC_MAP);
 
 // Push synced state up whenever setState or a custom-AI change touches it.
-if (window.api) {
-  const _setState = window.api.setState;
-  window.api.setState = async (patch) => {
-    const r = await _setState(patch);
-    if (patch && Object.keys(patch).some((k) => SYNC_STATE_KEYS.includes(k))) scheduleSyncPush();
-    return r;
-  };
-  const _add = window.api.addCustomAI;
-  window.api.addCustomAI = async (c) => { const r = await _add(c); scheduleSyncPush(); return r; };
-  const _remove = window.api.removeCustomAI;
-  window.api.removeCustomAI = async (id) => { const r = await _remove(id); scheduleSyncPush(); return r; };
+// NOTE: `window.api` comes from Electron's contextBridge and is READ-ONLY —
+// assigning to its properties throws ("Cannot assign to read only property"),
+// which previously threw at startup and left the whole app blank. So we never
+// reassign window.api; we wrap its methods in local functions and call those
+// everywhere setState / addCustomAI / removeCustomAI are used.
+const _rawSetState = window.api ? window.api.setState : null;
+const _rawAddCustomAI = window.api ? window.api.addCustomAI : null;
+const _rawRemoveCustomAI = window.api ? window.api.removeCustomAI : null;
+async function setState(patch) {
+  const r = await _rawSetState(patch);
+  if (patch && Object.keys(patch).some((k) => SYNC_STATE_KEYS.includes(k))) scheduleSyncPush();
+  return r;
 }
+async function addCustomAI(c) { const r = await _rawAddCustomAI(c); scheduleSyncPush(); return r; }
+async function removeCustomAI(id) { const r = await _rawRemoveCustomAI(id); scheduleSyncPush(); return r; }
 
 function showGate(show) { document.getElementById("auth-gate").classList.toggle("hidden", !show); }
 
@@ -124,7 +127,7 @@ async function syncPullIntoState() {
   }
   if (Object.keys(patch).length) {
     applyingRemote = true;
-    try { await window.api.setState(patch); } finally { applyingRemote = false; }
+    try { await setState(patch); } finally { applyingRemote = false; }
   }
 }
 
@@ -136,7 +139,7 @@ async function pullRecentsMerge() {
     const st = await window.api.getState();
     const merged = mergeRecents((Array.isArray(remote) ? remote : []).concat(st.universalRecents || []));
     applyingRemote = true;
-    try { await window.api.setState({ universalRecents: merged }); } finally { applyingRemote = false; }
+    try { await setState({ universalRecents: merged }); } finally { applyingRemote = false; }
     recents = merged;
     renderRecents();
   } catch (e) {}
@@ -149,7 +152,7 @@ async function pushRecentsMerged() {
     const remote = await window.api.syncPullRecents();
     const merged = mergeRecents((st.universalRecents || []).concat(Array.isArray(remote) ? remote : []));
     applyingRemote = true;
-    try { await window.api.setState({ universalRecents: merged }); } finally { applyingRemote = false; }
+    try { await setState({ universalRecents: merged }); } finally { applyingRemote = false; }
     recents = merged;
     await window.api.syncPushRecents(merged);
   } catch (e) {}
@@ -290,7 +293,7 @@ function wireDrag(el) {
 
 function persistOrder() {
   const order = [...railProviders.children].map((c) => c.dataset.id);
-  window.api.setState({ railOrder: order });
+  setState({ railOrder: order });
 }
 
 // -------------------------------------------------------------- selection
@@ -416,7 +419,7 @@ function addGlobalRecent(providerId, name, text) {
   if (allRecents[0] && allRecents[0].text === text && allRecents[0].providerId === providerId) return; // dedupe repeats
   allRecents.unshift({ providerId, name, text, at: Date.now() });
   allRecents = allRecents.slice(0, 60);
-  window.api.setState({ allRecents });
+  setState({ allRecents });
   renderRightBar();
 }
 
@@ -427,7 +430,7 @@ function setProfile(p) {
   const merged = { name: p.name || profile.name || "", avatar: p.avatar || profile.avatar || "" };
   if (merged.name === profile.name && merged.avatar === profile.avatar) return;
   profile = merged;
-  window.api.setState({ profile });
+  setState({ profile });
   renderProfile();
 }
 function renderProfile() {
@@ -674,7 +677,7 @@ async function sendToUAI() {
   }
   const entry = { id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text || "(attachment)", providerId: "", at: Date.now(), attachments: atts };
   recents.unshift(entry); recents = recents.slice(0, 80);
-  window.api.setState({ universalRecents: recents });
+  setState({ universalRecents: recents });
   renderRecents();
   pushRecentsMerged();
   const st = document.getElementById("universal-status");
@@ -741,7 +744,7 @@ function playChime() {
 function addRecent(text, providerId) {
   recents.unshift({ text, providerId, at: Date.now() });
   recents = recents.slice(0, 80);
-  window.api.setState({ universalRecents: recents });
+  setState({ universalRecents: recents });
   renderRecents();
   renderRightBar();
   pushRecentsMerged();   // sync to the shared recents field
@@ -936,16 +939,16 @@ function renderMemory() {
     ? memory.map((m, i) => `<div class="mem-row"><span>${escapeHtml(m)}</span><a href="#" class="mem-copy" data-i="${i}">Copy</a><a href="#" class="mem-del" data-i="${i}">Remove</a></div>`).join("")
     : `<p class="rb-empty">Nothing yet. Add a note above to reuse across your AIs.</p>`);
   const addRules = document.getElementById("mem-add-rules");
-  if (addRules) addRules.onclick = (e) => { e.preventDefault(); memory.unshift(WORKING_RULES); window.api.setState({ memory }); renderMemory(); };
+  if (addRules) addRules.onclick = (e) => { e.preventDefault(); memory.unshift(WORKING_RULES); setState({ memory }); renderMemory(); };
   list.querySelectorAll(".mem-copy").forEach((a) => a.onclick = (e) => { e.preventDefault(); try { navigator.clipboard.writeText(memory[+a.dataset.i]); } catch (x) {} a.textContent = "Copied"; setTimeout(() => a.textContent = "Copy", 1200); });
-  list.querySelectorAll(".mem-del").forEach((a) => a.onclick = (e) => { e.preventDefault(); memory.splice(+a.dataset.i, 1); window.api.setState({ memory }); renderMemory(); });
+  list.querySelectorAll(".mem-del").forEach((a) => a.onclick = (e) => { e.preventDefault(); memory.splice(+a.dataset.i, 1); setState({ memory }); renderMemory(); });
 }
 function addMemory() {
   const inp = document.getElementById("memory-input");
   const v = inp.value.trim();
   if (!v) return;
   memory.unshift(v); inp.value = "";
-  window.api.setState({ memory });
+  setState({ memory });
   renderMemory();
 }
 document.getElementById("memory-add").onclick = addMemory;
@@ -988,13 +991,13 @@ document.getElementById("profile-photo").onclick = async () => {
 document.getElementById("profile-save").onclick = () => {
   const name = document.getElementById("profile-name").value.trim();
   profile = { name, avatar: pendingPhoto || profile.avatar || "" };
-  window.api.setState({ profile });
+  setState({ profile });
   renderProfile();
   pendingPhoto = null;
 };
 document.getElementById("profile-clear").onclick = () => {
   profile = {}; pendingPhoto = null;
-  window.api.setState({ profile });
+  setState({ profile });
   renderProfile(); fillProfileSettings();
 };
 
@@ -1049,7 +1052,7 @@ function buildSettingsProviders() {
   box.querySelectorAll(".sp-remove").forEach((a) => a.onclick = async (e) => {
     e.preventDefault();
     if (!confirm("Remove this AI?")) return;
-    await window.api.removeCustomAI(a.dataset.id);
+    await removeCustomAI(a.dataset.id);
     if (webviews[a.dataset.id]) { webviews[a.dataset.id].remove(); delete webviews[a.dataset.id]; }
     const wasCurrent = current === a.dataset.id;
     await refresh();
@@ -1059,7 +1062,7 @@ function buildSettingsProviders() {
     e.preventDefault();
     const id = a.dataset.id;
     if (hidden.has(id)) hidden.delete(id); else hidden.add(id);
-    await window.api.setState({ hiddenProviders: [...hidden] });
+    await setState({ hiddenProviders: [...hidden] });
     if (hidden.has(id) && webviews[id]) { webviews[id].remove(); delete webviews[id]; }
     const wasCurrent = current === id;
     await refresh();
@@ -1077,7 +1080,7 @@ addDialog.addEventListener("close", async () => {
   const strengths = document.getElementById("add-strengths").value.trim();
   if (!name || !url) return;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-  await window.api.addCustomAI({ name, url, strengths });
+  await addCustomAI({ name, url, strengths });
   document.getElementById("add-name").value = "";
   document.getElementById("add-url").value = "";
   document.getElementById("add-strengths").value = "";
@@ -1158,7 +1161,7 @@ function escapeAttr(s) { return escapeHtml(s); }
 function addNotification(providerId, name, preview) {
   notifications.unshift({ providerId, name, preview, at: Date.now() });
   notifications = notifications.slice(0, 50);
-  window.api.setState({ notifications });
+  setState({ notifications });
   renderRightBar();
 }
 function timeAgo(ts) {
@@ -1214,12 +1217,12 @@ const SUGGESTIONS = [
   { icon: "🎬", text: "Create a short video of…" },
   { icon: "🔍", text: "Research and compare…" },
 ];
-document.getElementById("rb-clear").onclick = () => { notifications = []; window.api.setState({ notifications }); renderRightBar(); };
-document.getElementById("rb-recent-clear").onclick = () => { allRecents = []; window.api.setState({ allRecents }); renderRightBar(); };
+document.getElementById("rb-clear").onclick = () => { notifications = []; setState({ notifications }); renderRightBar(); };
+document.getElementById("rb-recent-clear").onclick = () => { allRecents = []; setState({ allRecents }); renderRightBar(); };
 document.getElementById("btn-rightbar").onclick = () => {
   const app = document.getElementById("app");
   app.classList.toggle("rb-hidden");
-  window.api.setState({ rbHidden: app.classList.contains("rb-hidden") });
+  setState({ rbHidden: app.classList.contains("rb-hidden") });
 };
 
 // Start up, and if anything goes wrong show it instead of a dead blank app.
