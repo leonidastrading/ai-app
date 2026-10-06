@@ -19,7 +19,6 @@
     <section class="hero">
       <div class="galaxy big" aria-hidden="true"></div>
       <h1>Ask anything.</h1>
-      <p class="sub">UAI picks the AI best suited to your request and opens it with your question ready to go.</p>
       <form id="ask-form">
         <div class="ask-field">
           <textarea id="ask" rows="3" placeholder="e.g. “write a Python script to rename files”, “generate an image of a city at night”, “what’s the latest on …”"></textarea>
@@ -55,8 +54,13 @@
       <h4>Add an AI</h4>
       <label>Name<input id="add-name" placeholder="Perplexity" /></label>
       <label>Web address<input id="add-url" placeholder="https://www.perplexity.ai/" /></label>
+      <label>Good at (optional)<input id="add-strengths" placeholder="web research with sources" /></label>
       <button type="button" id="add-btn" class="primary">Add</button>
-      <div id="custom-list"></div>
+      <div class="sugg-label muted small">Suggestions</div>
+      <div id="add-suggestions" class="add-suggestions"></div>
+      <h4>Your AIs</h4>
+      <p class="muted small">Toggle an AI off to hide it from the grid. Hidden AIs sync across your apps.</p>
+      <div id="providers-list"></div>
       <h4>About</h4>
       <p class="muted small">This is the web version of UAI. Browsers don’t allow embedding your logged-in AI sites, so this is a launcher + router. The macOS and Windows apps run each AI inside the app with your accounts.</p>
       <menu><button value="close" class="primary">Done</button></menu>
@@ -69,6 +73,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="galaxy.js"></script>
   <script src="providers.js"></script>
   <script src="app.js"></script>
   <script src="sync.js"></script>

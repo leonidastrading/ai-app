@@ -10,7 +10,7 @@
   const configured = cfg.apiKey && !/^PASTE/.test(cfg.apiKey);
 
   // blob key -> localStorage key (the data this web client manages)
-  const KEYS = { custom: "uai.custom" };
+  const KEYS = { custom: "uai.custom", hidden: "uai.hidden" };
   let lastBlob = {};
 
   function rerender() { try { window.UAI_rerender && window.UAI_rerender(); } catch (e) {} }
@@ -67,6 +67,7 @@
     '  <p class="auth-err" id="auth-err"></p>' +
     "</div>";
   document.body.appendChild(gate);
+  try { window.UAIGalaxy && UAIGalaxy.mountAll(".galaxy"); } catch (e) {}
   document.documentElement.classList.add("signed-out");
   document.getElementById("google-signin").onclick = function () {
     auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function (e) {

@@ -11,11 +11,30 @@ function saveCustom(list) {
   localStorage.setItem("uai.custom", JSON.stringify(list));
   try { window.UAI_sync && window.UAI_sync.push(); } catch (e) {}   // sync to the cloud
 }
+// Hidden AI ids (synced across apps via the shared blob's "hidden" key).
+function hidden() {
+  try { const v = JSON.parse(localStorage.getItem("uai.hidden") || "[]"); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
+function saveHidden(list) {
+  localStorage.setItem("uai.hidden", JSON.stringify(list));
+  try { window.UAI_sync && window.UAI_sync.push(); } catch (e) {}
+}
+function toggleHidden(id) {
+  const set = new Set(hidden());
+  if (set.has(id)) set.delete(id); else set.add(id);
+  saveHidden([...set]);
+}
 function allProviders() {
   return BUILTIN.concat(custom().map((c) => ({
     id: c.id, name: c.name, maker: hostOf(c.url), home: c.url, tint: "#8a6ddc", custom: true,
     prefill: null, strengths: c.strengths || "",
   })));
+}
+// Providers shown in the grid (hidden ones filtered out).
+function visibleProviders() {
+  const h = new Set(hidden());
+  return allProviders().filter((p) => !h.has(p.id));
 }
 function hostOf(u) { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return ""; } }
 function favicon(p) { try { return `https://www.google.com/s2/favicons?sz=128&domain=${new URL(p.home).host}`; } catch (e) { return ""; } }
@@ -71,7 +90,7 @@ function localRoute(prompt) {
 function renderGrid() {
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
-  for (const p of allProviders()) {
+  for (const p of visibleProviders()) {
     const el = document.createElement("button");
     el.className = "card";
     el.innerHTML = `<span class="ic" style="--ring:${p.tint}"><img src="${favicon(p)}" alt="" onerror="this.style.display='none'"></span>
@@ -90,17 +109,15 @@ function renderGrid() {
 
 // Recent prompts from all your apps (synced). Read-only here — click one to
 // reopen that AI with the prompt.
-function timeAgo(ms) {
+// Exact timestamp, e.g. "Oct 5, 2026 at 7:11 PM" — matches the desktop apps.
+function fmtWhen(ms) {
   if (!ms) return "";
-  const diff = Date.now() - ms;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return m + "m ago";
-  const h = Math.floor(m / 60);
-  if (h < 24) return h + "h ago";
-  const d = Math.floor(h / 24);
-  if (d < 7) return d + "d ago";
-  return new Date(ms).toLocaleDateString();
+  try {
+    const d = new Date(ms);
+    const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return `${date} at ${time}`;
+  } catch (e) { return ""; }
 }
 function renderRecents() {
   const wrap = document.getElementById("recents-wrap");
@@ -111,13 +128,14 @@ function renderRecents() {
   wrap.style.display = "";
   box.innerHTML = "";
   for (const r of list.slice(0, 20)) {
-    const p = byId(r.providerId);
-    const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : "";
+    const p = r.providerId ? byId(r.providerId) : null;
+    // Entries sent to UAI (no provider) show the UAI galaxy mark, not a routed AI.
+    const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : `<img src="icon.png" alt="UAI">`;
     const atts = Array.isArray(r.attachments) ? r.attachments : [];
     const thumbs = atts.filter((a) => a && a.dataURL).slice(0, 4).map((a) => `<img class="rr-thumb" src="${a.dataURL}" alt="">`).join("");
     const nonImg = atts.filter((a) => a && !a.dataURL).length;
     const attLabel = nonImg ? `<span class="rr-attlabel">📎 ${nonImg} file${nonImg > 1 ? "s" : ""}</span>` : "";
-    const meta = [p ? "Routed to " + esc(p.name) : "", r.at ? esc(timeAgo(r.at)) : ""].filter(Boolean).join(" · ");
+    const meta = [p ? "Routed to " + esc(p.name) : "UAI", r.at ? esc(fmtWhen(r.at)) : ""].filter(Boolean).join(" · ");
     const row = document.createElement("button");
     row.className = "recent-row";
     row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>${thumbs ? `<span class="rr-thumbs">${thumbs}</span>` : ""}${attLabel}`;
@@ -214,12 +232,11 @@ if (askField) {
 document.getElementById("send-uai-btn").onclick = () => {
   const text = document.getElementById("ask").value.trim();
   if (!text && !askAttachments.length) return;
-  let providerId = null;
-  try { providerId = localRoute(text || "attached file").provider; } catch (e) {}
+  // "Send to UAI" is not routed to any AI — it's just saved to your Recent.
   const entry = {
     id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     text: text || "(attachment)",
-    providerId,
+    providerId: null,
     at: Date.now(),
     attachments: askAttachments.slice(),
   };
@@ -231,23 +248,58 @@ document.getElementById("send-uai-btn").onclick = () => {
 
 // settings dialog
 const dlg = document.getElementById("settings");
-document.getElementById("settings-btn").onclick = () => { renderCustomList(); dlg.showModal(); };
+document.getElementById("settings-btn").onclick = () => { renderSettings(); dlg.showModal(); };
 document.getElementById("add-btn").onclick = () => {
   const name = document.getElementById("add-name").value.trim();
   let url = document.getElementById("add-url").value.trim();
+  const strengths = document.getElementById("add-strengths").value.trim();
   if (!name || !url) return;
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-  const list = custom(); list.push({ id: "c-" + Date.now().toString(36), name, url, strengths: "" });
+  const list = custom(); list.push({ id: "c-" + Date.now().toString(36), name, url, strengths });
   saveCustom(list);
-  document.getElementById("add-name").value = ""; document.getElementById("add-url").value = "";
-  renderCustomList(); renderGrid();
+  document.getElementById("add-name").value = ""; document.getElementById("add-url").value = ""; document.getElementById("add-strengths").value = "";
+  renderSettings(); renderGrid();
 };
-function renderCustomList() {
-  const box = document.getElementById("custom-list");
-  const list = custom();
-  box.innerHTML = list.length ? list.map((c) => `<div class="cl-row"><span>${esc(c.name)}</span><span class="muted">${esc(hostOf(c.url))}</span><span class="x" data-id="${c.id}">Remove</span></div>`).join("") : "";
-  box.querySelectorAll(".x").forEach((x) => x.onclick = () => { saveCustom(custom().filter((c) => c.id !== x.dataset.id)); renderCustomList(); renderGrid(); });
+
+// Same starter set as the desktop apps' "Add an AI" suggestions.
+const ADD_SUGGESTIONS = [
+  { name: "Perplexity", url: "https://www.perplexity.ai/", strengths: "web research with sources" },
+  { name: "Mistral", url: "https://chat.mistral.ai/", strengths: "fast open-weight chat" },
+  { name: "Copilot", url: "https://copilot.microsoft.com/", strengths: "Microsoft Copilot" },
+  { name: "Qwen", url: "https://chat.qwen.ai/", strengths: "multilingual, coding" },
+  { name: "Kimi", url: "https://www.kimi.com/", strengths: "long-document analysis" },
+  { name: "Midjourney", url: "https://www.midjourney.com/", strengths: "image generation" },
+];
+function renderSettings() { renderSuggestions(); renderProvidersList(); }
+function renderSuggestions() {
+  const box = document.getElementById("add-suggestions");
+  if (!box) return;
+  const existing = new Set(allProviders().map((p) => hostOf(p.home)));
+  box.innerHTML = ADD_SUGGESTIONS.map((s, i) => {
+    const have = existing.has(hostOf(s.url));
+    return `<button type="button" class="sugg-chip${have ? " have" : ""}" data-i="${i}"${have ? " disabled" : ""}>${esc(s.name)}</button>`;
+  }).join("");
+  box.querySelectorAll(".sugg-chip:not([disabled])").forEach((b) => b.onclick = () => {
+    const s = ADD_SUGGESTIONS[+b.dataset.i];
+    document.getElementById("add-name").value = s.name;
+    document.getElementById("add-url").value = s.url;
+    document.getElementById("add-strengths").value = s.strengths;
+  });
 }
+function renderProvidersList() {
+  const box = document.getElementById("providers-list");
+  if (!box) return;
+  const h = new Set(hidden());
+  box.innerHTML = allProviders().map((p) => {
+    const hid = h.has(p.id);
+    const rm = p.custom ? `<span class="x" data-rm="${p.id}">Remove</span>` : "";
+    return `<div class="cl-row"><span class="cl-name">${esc(p.name)}</span><span class="muted">${esc(p.maker || hostOf(p.home))}</span>` +
+      `<span class="cl-actions"><button type="button" class="tog${hid ? "" : " on"}" data-tog="${p.id}">${hid ? "Hidden" : "Shown"}</button>${rm}</span></div>`;
+  }).join("");
+  box.querySelectorAll("[data-tog]").forEach((b) => b.onclick = () => { toggleHidden(b.dataset.tog); renderProvidersList(); renderGrid(); });
+  box.querySelectorAll("[data-rm]").forEach((x) => x.onclick = () => { saveCustom(custom().filter((c) => c.id !== x.dataset.rm)); renderProvidersList(); renderGrid(); });
+}
+function renderCustomList() { renderSettings(); }  // back-compat
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -260,6 +312,9 @@ document.getElementById("note").innerHTML =
   "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab with your question pre-filled where the AI supports it (Claude, ChatGPT, xAI, v0). For the rest — and if a link opens the AI’s desktop app, which drops the pre-fill — your prompt is copied to the clipboard: just press ⌘/Ctrl+V. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
 
 renderGrid();
+
+// Mount the animated galaxy (same renderer as the desktop apps).
+try { window.UAIGalaxy && UAIGalaxy.mountAll(".galaxy"); } catch (e) {}
 
 // Let the sync layer refresh the UI when cloud data arrives.
 window.UAI_rerender = function () { renderGrid(); try { renderCustomList(); } catch (e) {} };

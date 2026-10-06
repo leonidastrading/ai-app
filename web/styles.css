@@ -39,11 +39,10 @@ main { max-width: 920px; margin: 0 auto; padding: 24px 20px 64px; }
 .note { color: var(--dim); font-size: 12.5px; text-align: center; margin-top: 36px; line-height: 1.6; }
 
 /* galaxy */
-.galaxy { width: 22px; height: 22px; border-radius: 50%; display: inline-block; vertical-align: middle;
-  background: radial-gradient(circle at 50% 50%, #fff 0%, rgba(241,115,173,0.7) 18%, rgba(90,107,240,0.25) 40%, #0a081a 74%),
-              conic-gradient(from 0deg, var(--pink), var(--aqua), var(--pink)); }
-.galaxy.big { width: 96px; height: 96px; margin: 0 auto 10px; box-shadow: 0 0 44px rgba(138,109,220,0.45); position: relative; }
-.galaxy.big::after { content: ""; position: absolute; inset: 16%; border-radius: 50%; background: radial-gradient(circle, #fff, rgba(241,115,173,0.6) 40%, transparent 70%); }
+/* The animated galaxy (galaxy.js) mounts a canvas into these; background is a
+   fallback for before the canvas paints / reduced-motion. */
+.galaxy { width: 22px; height: 22px; border-radius: 50%; display: inline-block; vertical-align: middle; background: #0a081a; }
+.galaxy.big { width: 104px; height: 104px; margin: 0 auto 10px; box-shadow: 0 0 44px rgba(138,109,220,0.45); position: relative; background: #0a081a; }
 
 dialog { background: var(--elev2); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: min(440px, 92vw); }
 dialog::backdrop { background: rgba(0,0,0,0.55); }
@@ -125,3 +124,18 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #acct-chip 
 /* Drag-and-drop highlight on the prompt box */
 .ask-field.drag #ask { border-color: var(--aqua); box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua) 30%, transparent); }
 .ask-field.drag::after { content: "Drop files to attach"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--aqua) 10%, transparent); border-radius: 12px; font-size: 14px; color: var(--text); pointer-events: none; }
+
+/* Add-an-AI suggestions + provider hide toggles */
+.sugg-label { margin: 14px 0 6px; }
+.add-suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sugg-chip { padding: 6px 12px; border-radius: 999px; background: var(--elev2); border: 1px solid var(--border); color: var(--text); font-size: 13px; cursor: pointer; }
+.sugg-chip:hover { border-color: var(--aqua); }
+.sugg-chip.have, .sugg-chip[disabled] { opacity: 0.4; cursor: default; }
+#providers-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.cl-row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+.cl-row .cl-name { font-weight: 500; }
+.cl-row .cl-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.cl-row .tog { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; }
+.cl-row .tog.on { color: var(--aqua); border-color: color-mix(in srgb, var(--aqua) 50%, var(--border)); }
+.cl-row .x { color: var(--pink); cursor: pointer; font-size: 13px; }
+.recent-row .rr-ic img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
