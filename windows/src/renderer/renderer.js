@@ -1,5 +1,33 @@
 "use strict";
 
+// Never fail silently to a blank window. Any uncaught error or rejected
+// promise during startup (or later) is shown on screen with its source and
+// line, so "the app is blank" becomes a readable, fixable message instead.
+function showFatal(msg, where) {
+  try {
+    let o = document.getElementById("fatal-overlay");
+    if (!o) {
+      o = document.createElement("div");
+      o.id = "fatal-overlay";
+      o.style.cssText = "position:fixed;inset:0;z-index:99999;background:#140a12;color:#ffd7e4;" +
+        "font:13px/1.5 system-ui,Segoe UI,sans-serif;padding:28px 32px;overflow:auto;white-space:pre-wrap";
+      (document.body || document.documentElement).appendChild(o);
+    }
+    o.textContent = "UAI hit an error while starting.\n\n" + String(msg) +
+      (where ? "\n\n" + where : "") +
+      "\n\nThis message means the app loaded but something threw. " +
+      "Please send this text so it can be fixed.";
+  } catch (e) { /* last resort: nothing more we can do */ }
+}
+window.addEventListener("error", (e) => {
+  showFatal((e && e.message) || "Unknown error",
+    e && e.filename ? e.filename.split(/[\\/]/).pop() + ":" + e.lineno + ":" + e.colno : "");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e && e.reason;
+  showFatal((r && (r.stack || r.message)) || String(r) || "Unhandled promise rejection", "(async)");
+});
+
 const paneWebviews = document.getElementById("pane-webviews");
 const railProviders = document.getElementById("rail-providers");
 
@@ -166,28 +194,35 @@ const _acctBtn = document.getElementById("acct-signout");
 if (_acctBtn) _acctBtn.onclick = async () => { try { await window.api.authSignOut(); } catch (e) {} location.reload(); };
 
 // -------------------------------------------------------------- startup
-drawGalaxies();   // render the spiral galaxy SVG into the rail icon + hero
+// Decorative only — must never block startup if galaxy.js failed to load.
+try { drawGalaxies(); } catch (e) { console.error("drawGalaxies failed", e); }
 async function boot() {
   await ensureSignedIn();      // blocks on the sign-in gate until Google sign-in succeeds
-  renderAccount();
-  await syncPullIntoState();   // bring this account's cloud data down before first render
-  await pullRecentsMerge();    // recents live in their own field
-  const state = await window.api.getState();
+  try { renderAccount(); } catch (e) { console.error("renderAccount failed", e); }
+  // Pull cloud data before first render, but never let a sync/network error
+  // block the app from rendering — it must boot offline too.
+  try { await syncPullIntoState(); } catch (e) { console.error("syncPullIntoState failed", e); }
+  try { await pullRecentsMerge(); } catch (e) { console.error("pullRecentsMerge failed", e); }
+  let state = {};
+  try { state = await window.api.getState(); } catch (e) { console.error("getState failed", e); }
   recents = state.universalRecents || [];
   notifications = state.notifications || [];
   allRecents = state.allRecents || [];
   memory = state.memory || [];
   profile = state.profile || {};
   if (state.rbHidden) document.getElementById("app").classList.add("rb-hidden");
-  await loadProviders(state);
-  buildRail();
-  renderRecents();
-  renderProfile();
-  renderRightBar();
-  select("__universal__");
-  refreshApiKeyStatus();
-  buildSettingsProviders();
-  renderMediaTabs();
+  // Each render is isolated: a bug in one section (e.g. a bad synced recent)
+  // must never blank the whole app. Show the Universal page no matter what.
+  const safe = (label, fn) => { try { fn(); } catch (e) { console.error("render failed:", label, e); } };
+  try { await loadProviders(state); } catch (e) { console.error("loadProviders failed", e); }
+  safe("buildRail", buildRail);
+  safe("renderRecents", renderRecents);
+  safe("renderProfile", renderProfile);
+  safe("renderRightBar", renderRightBar);
+  safe("select", () => select("__universal__"));
+  safe("refreshApiKeyStatus", refreshApiKeyStatus);
+  safe("buildSettingsProviders", buildSettingsProviders);
+  safe("renderMediaTabs", renderMediaTabs);
 
   window.api.onMediaChanged(() => { if (current === "__media__") loadMedia(); });
   window.api.onOpenProvider((id) => { if (id) select(id); });
@@ -541,7 +576,7 @@ function updateBadges() {
 // Mount the animated spiral galaxy (from galaxy.js) into the rail icon and the
 // Universal hero. UAIGalaxy.mount is a no-op if an element already has one.
 function drawGalaxies() {
-  UAIGalaxy.mountAll(".galaxy");
+  if (typeof UAIGalaxy !== "undefined" && UAIGalaxy) UAIGalaxy.mountAll(".galaxy");
 }
 
 // Prepend your saved Memory notes as context, so Universal prompts carry them.
@@ -1192,8 +1227,7 @@ if (!window.api) {
   document.body.innerHTML = '<div style="padding:40px;color:#e7e9ee;font:14px system-ui">UAI failed to start: the internal bridge didn\'t load. Please reinstall the latest build.</div>';
 } else {
   boot().catch((err) => {
-    const s = document.getElementById("status");
-    if (s) s.textContent = "Startup error: " + (err && err.message ? err.message : err);
     console.error("UAI boot failed:", err);
+    showFatal((err && (err.stack || err.message)) || String(err), "(boot)");
   });
 }
