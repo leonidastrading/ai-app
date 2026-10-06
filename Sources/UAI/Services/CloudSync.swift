@@ -166,7 +166,8 @@ final class CloudSync: ObservableObject {
 
         if let recentsArr = blob["recents"] as? [[String: Any]] {
             let incoming = recentsArr.compactMap { item -> RoutedPrompt? in
-                guard let text = item["text"] as? String, let pid = item["providerId"] as? String else { return nil }
+                guard let text = item["text"] as? String else { return nil }
+                let pid = item["providerId"] as? String ?? ""   // "" = sent to UAI, not routed
                 let ms = (item["at"] as? Double) ?? Double(item["at"] as? Int ?? 0)
                 let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
                 let atts = (item["attachments"] as? [[String: Any]])?.compactMap { a -> RecentAttachment? in

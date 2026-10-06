@@ -233,10 +233,11 @@ document.getElementById("send-uai-btn").onclick = () => {
   const text = document.getElementById("ask").value.trim();
   if (!text && !askAttachments.length) return;
   // "Send to UAI" is not routed to any AI — it's just saved to your Recent.
+  // Use "" (not null) so the desktop apps' JSON parsers keep the entry.
   const entry = {
     id: "r-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     text: text || "(attachment)",
-    providerId: null,
+    providerId: "",
     at: Date.now(),
     attachments: askAttachments.slice(),
   };
