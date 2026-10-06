@@ -117,6 +117,11 @@ function signIn() {
     const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
     const state = b64url(crypto.randomBytes(16));
 
+    // Captured once the server is listening. Must be read BEFORE server.close(),
+    // because server.address() returns null after the server is closed (Node 20),
+    // which caused "Cannot read properties of null (reading 'port')".
+    let boundPort = null;
+
     const server = http.createServer(async (req, res) => {
       try {
         const u = new URL(req.url, "http://127.0.0.1");
@@ -127,7 +132,7 @@ function signIn() {
         if (u.searchParams.get("error")) return reject(new Error(u.searchParams.get("error")));
         if (u.searchParams.get("state") !== state) return reject(new Error("State mismatch"));
         const code = u.searchParams.get("code");
-        const port = server.address().port;
+        const port = boundPort;
         const tok = await request("https://oauth2.googleapis.com/token", {
           method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: form({
@@ -141,7 +146,8 @@ function signIn() {
     });
 
     server.listen(0, "127.0.0.1", () => {
-      const port = server.address().port;
+      boundPort = server.address().port;
+      const port = boundPort;
       const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + form({
         client_id: CFG.googleClientId, redirect_uri: "http://127.0.0.1:" + port,
         response_type: "code", scope: "openid email profile",
