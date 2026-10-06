@@ -119,6 +119,8 @@ function fmtWhen(ms) {
     return `${date} at ${time}`;
   } catch (e) { return ""; }
 }
+const RECENTS_PER_PAGE = 20;
+let recentsPage = 0;
 function renderRecents() {
   const wrap = document.getElementById("recents-wrap");
   const box = document.getElementById("recents");
@@ -127,7 +129,27 @@ function renderRecents() {
   if (!list.length) { wrap.style.display = "none"; box.innerHTML = ""; return; }
   wrap.style.display = "";
   box.innerHTML = "";
-  for (const r of list.slice(0, 20)) {
+  // Pagination: 20 per page.
+  const pageCount = Math.max(1, Math.ceil(list.length / RECENTS_PER_PAGE));
+  if (recentsPage > pageCount - 1) recentsPage = pageCount - 1;
+  if (recentsPage < 0) recentsPage = 0;
+  const start = recentsPage * RECENTS_PER_PAGE;
+  const pageItems = list.slice(start, start + RECENTS_PER_PAGE);
+  const pager = document.getElementById("recents-pager");
+  if (pager) {
+    if (pageCount > 1) {
+      pager.style.display = "";
+      const info = document.getElementById("recents-pageinfo");
+      if (info) info.textContent = "Page " + (recentsPage + 1) + " of " + pageCount;
+      const prev = document.getElementById("recents-prev");
+      const next = document.getElementById("recents-next");
+      if (prev) { prev.disabled = recentsPage === 0; prev.onclick = () => { recentsPage--; renderRecents(); }; }
+      if (next) { next.disabled = recentsPage >= pageCount - 1; next.onclick = () => { recentsPage++; renderRecents(); }; }
+    } else {
+      pager.style.display = "none";
+    }
+  }
+  for (const r of pageItems) {
     const p = r.providerId ? byId(r.providerId) : null;
     // Entries sent to UAI (no provider) show the UAI galaxy mark, not a routed AI.
     const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : `<img src="icon.png" alt="UAI">`;
@@ -384,7 +406,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 document.getElementById("note").innerHTML =
   "This is the web launcher. Browsers block embedding your logged-in AI sites, so UAI opens each one in a new tab with your question pre-filled where the AI supports it (Claude, ChatGPT, xAI, v0). For the rest — and if a link opens the AI’s desktop app, which drops the pre-fill — your prompt is copied to the clipboard: just press ⌘/Ctrl+V. For the full in-app experience (each AI embedded, shared media, notifications), use the macOS or Windows app.";
 
-const WEB_VERSION = "2026.10.06";
+const WEB_VERSION = "2026.10.06 · 14:35";
 try { document.getElementById("webver").textContent = "UAI web · v" + WEB_VERSION; } catch (e) {}
 
 renderGrid();

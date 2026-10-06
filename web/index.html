@@ -11,8 +11,8 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="galaxy"></span> <strong>UAI</strong> <span class="muted">Universal AI</span></div>
-    <a id="download-btn" class="ghost" href="https://uai-download.vercel.app/" target="_blank" rel="noopener">Download apps</a>
+    <div class="brand"><span class="galaxy"></span> <strong>UAI</strong></div>
+    <a id="download-btn" class="ghost" href="https://uai-download.vercel.app/" target="_blank" rel="noopener">Download</a>
     <button id="settings-btn" class="ghost">Settings</button>
   </header>
 
@@ -44,6 +44,11 @@
     <section class="recents-wrap" id="recents-wrap" style="display:none">
       <h2>Recent <span class="muted">— from all your apps</span></h2>
       <div id="recents" class="recents"></div>
+      <div id="recents-pager" class="recents-pager" style="display:none">
+        <button id="recents-prev" class="ghost small" type="button">‹ Prev</button>
+        <span id="recents-pageinfo" class="muted"></span>
+        <button id="recents-next" class="ghost small" type="button">Next ›</button>
+      </div>
     </section>
 
     <p class="note" id="note"></p>

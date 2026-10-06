@@ -85,10 +85,26 @@
     chip.id = "acct-chip";
     chip.className = "acct-chip";
     const photo = user.photoURL ? '<img src="' + user.photoURL + '" alt="">' : "";
-    chip.innerHTML = photo + "<span>" + (user.displayName || user.email || "Account") + "</span>" +
-      '<button id="signout" class="ghost small">Sign out</button>';
+    chip.innerHTML =
+      '<button id="acct-trigger" class="acct-trigger" type="button" aria-haspopup="true" aria-expanded="false">' +
+        photo + "<span>" + (user.displayName || user.email || "Account") + "</span>" +
+        '<span class="acct-caret" aria-hidden="true">▾</span>' +
+      "</button>" +
+      '<div id="acct-menu" class="acct-menu"><button id="signout" class="ghost small">Sign out</button></div>';
     bar.appendChild(chip);
-    document.getElementById("signout").onclick = function () { auth.signOut(); };
+
+    const trigger = document.getElementById("acct-trigger");
+    const menu = document.getElementById("acct-menu");
+    function closeMenu() { menu.classList.remove("open"); trigger.setAttribute("aria-expanded", "false"); }
+    function toggleMenu() {
+      const open = menu.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    trigger.onclick = function (e) { e.stopPropagation(); toggleMenu(); };
+    document.getElementById("signout").onclick = function () { closeMenu(); auth.signOut(); };
+    // Click anywhere else (or Esc) closes the menu.
+    document.addEventListener("click", function (e) { if (!chip.contains(e.target)) closeMenu(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
   }
 
   function applyBlob(blob) {

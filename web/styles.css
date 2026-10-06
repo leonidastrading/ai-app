@@ -79,8 +79,14 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #download-b
 .auth-card .galaxy.big { margin: 0 auto 10px; }
 #google-signin { font-size: 16px; padding: 12px 22px; }
 .auth-err { color: #ff8aa8; font-size: 13px; min-height: 16px; }
-.acct-chip { display: flex; align-items: center; gap: 8px; margin-left: 12px; font-size: 13px; color: #cfcbe6; }
+.acct-chip { position: relative; display: flex; align-items: center; margin-left: 12px; font-size: 13px; color: #cfcbe6; }
 .acct-chip img { width: 24px; height: 24px; border-radius: 50%; }
+.acct-trigger { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid transparent; color: inherit; font: inherit; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+.acct-trigger:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+.acct-caret { font-size: 10px; opacity: 0.7; }
+.acct-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1000; display: none; background: #1a1830; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.acct-menu.open { display: block; }
+.acct-menu .ghost { display: block; width: 100%; white-space: nowrap; }
 .ghost.small { font-size: 12px; padding: 4px 8px; }
 
 /* Recent history (synced from all apps) */
@@ -154,4 +160,6 @@ html.signed-out main, html.signed-out #settings-btn, html.signed-out #download-b
 .lightbox .lb-dl { text-decoration: none; padding: 10px 20px; border-radius: 10px; font-weight: 600; color: #fff; background: linear-gradient(120deg, var(--aqua), #2f86c9); }
 .lightbox .lb-close { padding: 10px 20px; border-radius: 10px; background: var(--elev); border: 1px solid var(--border); color: var(--text); cursor: pointer; }
 
+.recents-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 12px; font-size: 13px; }
+.recents-pager .ghost.small:disabled { opacity: 0.35; cursor: default; }
 .webver { text-align: center; color: var(--dim); font-size: 12px; opacity: 0.6; margin: 8px 0 30px; }
