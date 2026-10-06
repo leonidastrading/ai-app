@@ -167,6 +167,18 @@ async function boot() {
 
   window.api.onMediaChanged(() => { if (current === "__media__") loadMedia(); });
   window.api.onOpenProvider((id) => { if (id) select(id); });
+
+  // Poll the cloud so Recent (and other synced data) from other devices shows
+  // up without a restart.
+  setInterval(async () => {
+    if (!currentUser) return;
+    try {
+      await syncPullIntoState();
+      const st = await window.api.getState();
+      recents = st.universalRecents || [];
+      renderRecents();
+    } catch (e) {}
+  }, 20000);
 }
 
 async function loadProviders(state) {

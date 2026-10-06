@@ -126,9 +126,12 @@ struct MainView: View {
 struct TopBar: ToolbarContent {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
+    @EnvironmentObject private var cloud: CloudSync
 
-    private var isProvider: Bool { if case .provider = app.destination { return true } else { return false } }
-    private func reloadCurrent() { if case .provider(let id) = app.destination { webViews.reload(id) } }
+    private func reloadCurrent() {
+        if case .provider(let id) = app.destination { webViews.reload(id) }
+        else { Task { await cloud.refresh() } }   // Universal/Media/Memory: re-sync from the cloud
+    }
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
@@ -141,7 +144,6 @@ struct TopBar: ToolbarContent {
             Button { reloadCurrent() } label: { Image(systemName: "arrow.clockwise") }
                 .help("Reload (⌘R)")
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(!isProvider)
         }
         ToolbarItem(placement: .principal) {
             GlobalSearchField()

@@ -322,6 +322,7 @@ private struct RoutedMessage: View {
     let entry: RoutedPrompt
 
     var body: some View {
+        let isUAI = entry.provider.rawValue.isEmpty
         let provider = Provider.get(entry.provider)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
@@ -333,23 +334,57 @@ private struct RoutedMessage: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Text(entry.prompt).textSelection(.enabled)
+                    if let atts = entry.attachments, !atts.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(Array(atts.prefix(5).enumerated()), id: \.offset) { _, a in
+                                if let s = a.dataURL, let data = Self.decode(s), let img = NSImage(data: data) {
+                                    Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                                        .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                                } else {
+                                    HStack(spacing: 4) { Image(systemName: "paperclip"); Text(a.name).lineLimit(1) }
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6).padding(.vertical, 4)
+                                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                                }
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
                 }
             }
-            Button {
-                app.go(.provider(entry.provider))
-            } label: {
+            if isUAI {
                 HStack(spacing: 6) {
-                    ProviderIcon(provider: provider, size: 16)
-                    Text("Routed to **\(provider.name)** · \(entry.reason)")
-                    Text("by \(entry.routedBy)").foregroundStyle(.tertiary)
-                    Image(systemName: "arrow.up.right")
+                    GalaxyIcon(size: 16)
+                    Text("Sent to **UAI**")
                 }
                 .font(.caption)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Color.secondary.opacity(0.12), in: Capsule())
+                .padding(.leading, 40)
+            } else {
+                Button {
+                    app.go(.provider(entry.provider))
+                } label: {
+                    HStack(spacing: 6) {
+                        ProviderIcon(provider: provider, size: 16)
+                        Text(entry.reason.isEmpty ? "Routed to **\(provider.name)**" : "Routed to **\(provider.name)** · \(entry.reason)")
+                        if entry.routedBy != "UAI" && !entry.routedBy.isEmpty {
+                            Text("by \(entry.routedBy)").foregroundStyle(.tertiary)
+                        }
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 40)
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 40)
         }
+    }
+
+    private static func decode(_ s: String) -> Data? {
+        guard let c = s.range(of: ",") else { return nil }
+        return Data(base64Encoded: String(s[c.upperBound...]))
     }
 }

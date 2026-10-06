@@ -11,17 +11,18 @@ final class CloudSync: ObservableObject {
 
     private let registry = ProviderRegistry.shared
     private let memory: MemoryStore
-    private let recents: GlobalRecents
+    private let universal: UniversalStore
     private let profile: Profile
 
     private var cancellables = Set<AnyCancellable>()
     private var suppressUntil = Date.distantPast   // ignore pushes right after applying a pull
     private var started = false
+    private var pollTimer: Timer?
 
-    init(auth: AuthStore, memory: MemoryStore, recents: GlobalRecents, profile: Profile) {
+    init(auth: AuthStore, memory: MemoryStore, universal: UniversalStore, profile: Profile) {
         self.auth = auth
         self.memory = memory
-        self.recents = recents
+        self.universal = universal
         self.profile = profile
     }
 
@@ -29,7 +30,7 @@ final class CloudSync: ObservableObject {
     func startAfterSignIn() async {
         let blob = await auth.pull()
         applyBlob(blob)
-        if !started { watchForChanges(); started = true }
+        if !started { watchForChanges(); startPolling(); started = true }
         // Seed the profile name/photo from Google on first sign-in if we have nothing.
         if profile.name.isEmpty, let acct = auth.account, !acct.name.isEmpty {
             profile.setName(acct.name.split(separator: " ").first.map(String.init) ?? acct.name)
@@ -43,7 +44,15 @@ final class CloudSync: ObservableObject {
         schedulePush()
     }
 
+    /// Manually pull and apply the latest cloud data (e.g. the Reload button).
+    func refresh() async {
+        guard auth.isSignedIn else { return }
+        let blob = await auth.pull()
+        applyBlob(blob)
+    }
+
     func signOut() {
+        pollTimer?.invalidate(); pollTimer = nil
         auth.signOut()
     }
 
@@ -53,12 +62,24 @@ final class CloudSync: ObservableObject {
         Publishers.MergeMany([
             registry.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             memory.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
-            recents.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            universal.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             profile.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
         ])
         .debounce(for: .seconds(1.2), scheduler: RunLoop.main)
         .sink { [weak self] in self?.schedulePush() }
         .store(in: &cancellables)
+    }
+
+    /// Poll the cloud so changes from other devices appear without a restart.
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.auth.isSignedIn else { return }
+                let blob = await self.auth.pull()
+                self.applyBlob(blob)
+            }
+        }
     }
 
     private func schedulePush() {
@@ -104,8 +125,10 @@ final class CloudSync: ObservableObject {
             ["id": $0.id, "name": $0.name, "url": $0.url, "strengths": $0.strengths]
         }
         blob["memory"] = memory.allTexts
-        blob["recents"] = recents.items.prefix(60).map { r -> [String: Any] in
-            var d: [String: Any] = ["text": r.text, "providerId": r.provider.rawValue, "at": Int(r.date.timeIntervalSince1970 * 1000)]
+        blob["recents"] = universal.history.prefix(60).map { r -> [String: Any] in
+            var d: [String: Any] = ["text": r.prompt, "providerId": r.provider.rawValue,
+                                    "at": Int(r.date.timeIntervalSince1970 * 1000),
+                                    "reason": r.reason, "routedBy": r.routedBy]
             if let atts = r.attachments, !atts.isEmpty {
                 d["attachments"] = atts.map { a -> [String: Any] in
                     var ad: [String: Any] = ["name": a.name]
@@ -142,7 +165,7 @@ final class CloudSync: ObservableObject {
         }
 
         if let recentsArr = blob["recents"] as? [[String: Any]] {
-            let incoming = recentsArr.compactMap { item -> RecentPrompt? in
+            let incoming = recentsArr.compactMap { item -> RoutedPrompt? in
                 guard let text = item["text"] as? String, let pid = item["providerId"] as? String else { return nil }
                 let ms = (item["at"] as? Double) ?? Double(item["at"] as? Int ?? 0)
                 let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
@@ -150,17 +173,19 @@ final class CloudSync: ObservableObject {
                     guard let name = a["name"] as? String else { return nil }
                     return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String)
                 }
-                return RecentPrompt(provider: ProviderID(rawValue: pid), text: text, date: date, attachments: atts)
+                return RoutedPrompt(date: date, prompt: text, provider: ProviderID(rawValue: pid),
+                                    reason: item["reason"] as? String ?? "",
+                                    routedBy: item["routedBy"] as? String ?? "UAI", attachments: atts)
             }
             // Merge with whatever is local so a pull never drops local-only entries.
-            var seen = Set<String>(); var merged: [RecentPrompt] = []
-            for r in incoming + recents.items {
-                let key = Self.recentKey(providerId: r.provider.rawValue, at: Int(r.date.timeIntervalSince1970 * 1000), text: r.text)
+            var seen = Set<String>(); var merged: [RoutedPrompt] = []
+            for r in incoming + universal.history {
+                let key = Self.recentKey(providerId: r.provider.rawValue, at: Int(r.date.timeIntervalSince1970 * 1000), text: r.prompt)
                 if seen.contains(key) { continue }
                 seen.insert(key); merged.append(r)
             }
             merged.sort { $0.date > $1.date }
-            recents.replaceAll(Array(merged.prefix(80)))
+            universal.replaceAll(Array(merged.prefix(200)))
         }
 
         if let order = blob["railOrder"] as? [String] {

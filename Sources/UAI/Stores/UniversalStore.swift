@@ -7,7 +7,8 @@ struct RoutedPrompt: Codable, Identifiable, Hashable {
     let prompt: String
     let provider: ProviderID
     let reason: String
-    let routedBy: String  // "Claude" or "Rules"
+    let routedBy: String  // "Claude", "Rules", or "UAI" (sent to UAI, not routed)
+    var attachments: [RecentAttachment]? = nil
 }
 
 @MainActor
@@ -27,6 +28,12 @@ final class UniversalStore: ObservableObject {
 
     func clear() {
         history = []
+        JSONFile.save(history, to: Self.file)
+    }
+
+    /// Replace all history (from a cloud pull).
+    func replaceAll(_ items: [RoutedPrompt]) {
+        history = Array(items.prefix(500))
         JSONFile.save(history, to: Self.file)
     }
 

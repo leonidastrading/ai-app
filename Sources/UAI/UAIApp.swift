@@ -23,18 +23,19 @@ struct UAIApp: App {
         let media = MediaLibrary()
         let profile = Profile()
         let recents = GlobalRecents()
+        let universal = UniversalStore()
         let memory = MemoryStore(index: index)
         let auth = AuthStore()
         _app = StateObject(wrappedValue: AppState())
         _index = StateObject(wrappedValue: index)
         _media = StateObject(wrappedValue: media)
-        _universal = StateObject(wrappedValue: UniversalStore())
+        _universal = StateObject(wrappedValue: universal)
         _webViews = StateObject(wrappedValue: WebViewStore(index: index, media: media))
         _memory = StateObject(wrappedValue: memory)
         _profile = StateObject(wrappedValue: profile)
         _recents = StateObject(wrappedValue: recents)
         _auth = StateObject(wrappedValue: auth)
-        _cloud = StateObject(wrappedValue: CloudSync(auth: auth, memory: memory, recents: recents, profile: profile))
+        _cloud = StateObject(wrappedValue: CloudSync(auth: auth, memory: memory, universal: universal, profile: profile))
     }
 
     var body: some Scene {
