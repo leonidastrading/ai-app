@@ -132,7 +132,8 @@ struct UniversalView: View {
                 .buttonStyle(.borderless)
                 .fixedSize()
                 Button { sendToUAI() } label: { Label("Send to UAI", systemImage: "sparkles") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.aqua)
                     .help("Save this to your Recent on every device, without routing to an AI")
                     .disabled(!canSend)
                 Spacer()
