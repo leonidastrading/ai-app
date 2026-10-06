@@ -30,14 +30,28 @@ final class AuthStore: ObservableObject {
     private var idToken: String?
     private var refreshToken: String?
     private var expiresAt = Date.distantPast
-    private let refreshAccount = "firebase.refreshToken"
+
+    // The Firebase refresh token is kept in a 0600 file in the app's own folder,
+    // NOT the login Keychain — an ad-hoc-signed app's signature changes every
+    // build, so the Keychain would pop a password prompt on every launch.
+    private var tokenFileURL: URL { Paths.appSupport.appendingPathComponent("uai-auth.token") }
+    private func storeRefresh(_ token: String) {
+        guard let data = token.data(using: .utf8) else { return }
+        try? data.write(to: tokenFileURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFileURL.path)
+    }
+    private func loadStoredRefresh() -> String? {
+        guard let data = try? Data(contentsOf: tokenFileURL), let s = String(data: data, encoding: .utf8), !s.isEmpty else { return nil }
+        return s
+    }
+    private func clearStoredRefresh() { try? FileManager.default.removeItem(at: tokenFileURL) }
 
     // MARK: - Session lifecycle
 
     /// Restore a saved session (silent). Returns true if signed in.
     @discardableResult
     func restore() async -> Bool {
-        guard let saved = Keychain.read(refreshAccount), !saved.isEmpty else { return false }
+        guard let saved = loadStoredRefresh() else { return false }
         refreshToken = saved
         do { _ = try await validToken(); return account != nil }
         catch { return false }
@@ -48,7 +62,7 @@ final class AuthStore: ObservableObject {
         idToken = nil
         refreshToken = nil
         expiresAt = .distantPast
-        Keychain.delete(refreshAccount)
+        clearStoredRefresh()
     }
 
     // MARK: - Interactive sign-in
@@ -104,7 +118,7 @@ final class AuthStore: ObservableObject {
               email: json["email"] as? String,
               name: json["displayName"] as? String,
               photo: json["photoUrl"] as? String)
-        if let rt = refreshToken { Keychain.write(rt, for: refreshAccount) }
+        if let rt = refreshToken { storeRefresh(rt) }
     }
 
     private func refreshIfNeeded() async throws {
@@ -116,7 +130,7 @@ final class AuthStore: ObservableObject {
               expiresIn: json["expires_in"],
               uid: json["user_id"] as? String,
               email: account?.email, name: account?.name, photo: account?.photo)
-        if let rt = refreshToken { Keychain.write(rt, for: refreshAccount) }
+        if let rt = refreshToken { storeRefresh(rt) }
     }
 
     private func validToken() async throws -> String {
