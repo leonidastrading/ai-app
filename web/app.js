@@ -132,14 +132,22 @@ function renderRecents() {
     // Entries sent to UAI (no provider) show the UAI galaxy mark, not a routed AI.
     const icon = p ? `<img src="${favicon(p)}" alt="" onerror="this.style.display='none'">` : `<img src="icon.png" alt="UAI">`;
     const atts = Array.isArray(r.attachments) ? r.attachments : [];
-    const thumbs = atts.filter((a) => a && a.dataURL).slice(0, 4).map((a) => `<img class="rr-thumb" src="${a.dataURL}" alt="">`).join("");
-    const nonImg = atts.filter((a) => a && !a.dataURL).length;
-    const attLabel = nonImg ? `<span class="rr-attlabel">📎 ${nonImg} file${nonImg > 1 ? "s" : ""}</span>` : "";
+    const chips = atts.slice(0, 6).map((a, ai) => {
+      const t = a.thumb || a.dataURL;
+      return t
+        ? `<img class="rr-thumb" data-ai="${ai}" src="${t}" alt="${esc(a.name || "")}" title="${esc(a.name || "")}">`
+        : `<span class="rr-file" data-ai="${ai}" title="${esc(a.name || "file")}">📎 ${esc((a.name || "file").slice(0, 18))}</span>`;
+    }).join("");
     const meta = [p ? "Routed to " + esc(p.name) : "UAI", r.at ? esc(fmtWhen(r.at)) : ""].filter(Boolean).join(" · ");
     const row = document.createElement("button");
     row.className = "recent-row";
-    row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>${thumbs ? `<span class="rr-thumbs">${thumbs}</span>` : ""}${attLabel}`;
+    row.innerHTML = `<span class="rr-ic">${icon}</span><span class="rr-main"><span class="rr-text">${esc(r.text)}</span><span class="rr-meta">${meta}</span></span>${chips ? `<span class="rr-thumbs">${chips}</span>` : ""}`;
     if (p) row.onclick = () => openProvider(p, r.text);
+    // Clicking an attachment opens/enlarges it (doesn't trigger the row click).
+    row.querySelectorAll("[data-ai]").forEach((el) => el.addEventListener("click", (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      const a = atts[+el.dataset.ai]; if (a) openAttachment(a);
+    }));
     box.appendChild(row);
   }
 }
@@ -167,7 +175,7 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
 });
 
 // ---------------------------------------------------------- attachments + Send to UAI
-let askAttachments = []; // { name, type, dataURL? (thumbnail for images) }
+let askAttachments = []; // { name, type, file (original), thumb? (preview) }
 
 function renderAskAttachments() {
   const box = document.getElementById("ask-attachments");
@@ -175,10 +183,28 @@ function renderAskAttachments() {
   if (!askAttachments.length) { box.innerHTML = ""; box.style.display = "none"; return; }
   box.style.display = "";
   box.innerHTML = askAttachments.map((a, i) => {
-    const thumb = a.dataURL ? `<img src="${a.dataURL}" alt="">` : `<span class="att-doc">📄</span>`;
+    const thumb = a.thumb ? `<img src="${a.thumb}" alt="">` : `<span class="att-doc">📄</span>`;
     return `<span class="att-chip">${thumb}<span class="att-name">${esc(a.name)}</span><span class="att-x" data-i="${i}">✕</span></span>`;
   }).join("");
   box.querySelectorAll(".att-x").forEach((x) => x.onclick = () => { askAttachments.splice(+x.dataset.i, 1); renderAskAttachments(); });
+}
+
+// Upload the original file to Firebase Storage so it can be opened/downloaded
+// on any device; keep a small thumbnail for inline preview.
+async function uploadAttachment(a) {
+  const out = { name: a.name, type: a.type };
+  if (a.thumb) out.thumb = a.thumb;
+  try {
+    const user = window.firebase && firebase.auth && firebase.auth().currentUser;
+    if (user && firebase.storage && a.file) {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const safe = (a.name || "file").replace(/[^\w.\-]+/g, "_").slice(0, 80);
+      const ref = firebase.storage().ref("users/" + user.uid + "/attachments/" + id + "-" + safe);
+      await ref.put(a.file, { contentType: a.type || "application/octet-stream", contentDisposition: 'attachment; filename="' + safe + '"' });
+      out.url = await ref.getDownloadURL();
+    }
+  } catch (e) { /* no Storage configured → preview-only */ }
+  return out;
 }
 
 // Downscale an image to a small JPEG data URL so it stays tiny in the synced blob.
@@ -200,8 +226,8 @@ function imageThumb(file, max = 320, quality = 0.7) {
 async function addAskFiles(fileList) {
   for (const f of fileList) {
     if (!f) continue;
-    const att = { name: f.name || "file", type: f.type || "application/octet-stream" };
-    if ((f.type || "").startsWith("image/")) { const t = await imageThumb(f); if (t) att.dataURL = t; }
+    const att = { name: f.name || "file", type: f.type || "application/octet-stream", file: f };
+    if ((f.type || "").startsWith("image/")) { const t = await imageThumb(f); if (t) att.thumb = t; }
     askAttachments.push(att);
     if (askAttachments.length >= 6) break; // keep it light
   }
@@ -229,9 +255,17 @@ if (askField) {
   });
 }
 
-document.getElementById("send-uai-btn").onclick = () => {
+document.getElementById("send-uai-btn").onclick = async () => {
   const text = document.getElementById("ask").value.trim();
   if (!text && !askAttachments.length) return;
+  const btn = document.getElementById("send-uai-btn");
+  const pending = askAttachments.slice();
+  document.getElementById("ask").value = "";
+  askAttachments = []; renderAskAttachments();
+  btn.disabled = true;
+  let attachments = [];
+  try { attachments = await Promise.all(pending.map(uploadAttachment)); } catch (e) { attachments = pending.map((a) => ({ name: a.name, type: a.type, thumb: a.thumb })); }
+  btn.disabled = false;
   // "Send to UAI" is not routed to any AI — it's just saved to your Recent.
   // Use "" (not null) so the desktop apps' JSON parsers keep the entry.
   const entry = {
@@ -239,13 +273,34 @@ document.getElementById("send-uai-btn").onclick = () => {
     text: text || "(attachment)",
     providerId: "",
     at: Date.now(),
-    attachments: askAttachments.slice(),
+    attachments,
   };
   try { window.UAI_sync && window.UAI_sync.addRecent && window.UAI_sync.addRecent(entry); } catch (e) {}
-  document.getElementById("ask").value = "";
-  askAttachments = []; renderAskAttachments();
   toast("Sent to UAI — saved to your Recent on every signed-in device");
 };
+
+// Open an attachment: images enlarge in a lightbox (with Download); other files
+// open in a new tab (Storage serves them as a download).
+function attSrc(a) { return a.url || a.dataURL || a.thumb || ""; }
+function attIsImage(a) { return (a.type || "").startsWith("image/") || (!!(a.thumb || a.dataURL) && !a.type); }
+function openAttachment(a) {
+  const src = attSrc(a);
+  if (!src) { toast("This attachment isn’t available on this device."); return; }
+  if (attIsImage(a)) showLightbox(a);
+  else window.open(a.url || src, "_blank", "noopener");
+}
+function showLightbox(a) {
+  const full = a.url || a.dataURL || a.thumb;
+  let lb = document.getElementById("lightbox");
+  if (!lb) { lb = document.createElement("div"); lb.id = "lightbox"; lb.className = "lightbox"; document.body.appendChild(lb); }
+  // A Storage URL downloads via its contentDisposition; a dataURL needs the download attr.
+  const dlAttr = a.url ? "" : ` download="${esc(a.name || "image")}"`;
+  lb.innerHTML = `<div class="lb-inner"><img src="${full}" alt="${esc(a.name || "")}">` +
+    `<div class="lb-actions"><a class="lb-dl" href="${a.url || full}"${dlAttr} target="_blank" rel="noopener">Download</a>` +
+    `<button type="button" class="lb-close">Close</button></div></div>`;
+  lb.style.display = "flex";
+  lb.onclick = (e) => { if (e.target === lb || e.target.classList.contains("lb-close")) lb.style.display = "none"; };
+}
 
 // settings dialog
 const dlg = document.getElementById("settings");

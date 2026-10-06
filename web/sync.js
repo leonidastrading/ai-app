@@ -28,7 +28,9 @@
     out.sort((a, b) => (b.at || 0) - (a.at || 0));
     const capped = out.slice(0, 80);
     capped.forEach((r, i) => {
-      if (i >= 12 && Array.isArray(r.attachments)) r.attachments = r.attachments.map((a) => ({ name: a.name, type: a.type }));
+      // Beyond the newest few, drop the inline preview thumbnail but keep the
+      // Storage URL so the file can still be opened/downloaded.
+      if (i >= 12 && Array.isArray(r.attachments)) r.attachments = r.attachments.map((a) => ({ name: a.name, type: a.type, url: a.url }));
     });
     return capped;
   }
