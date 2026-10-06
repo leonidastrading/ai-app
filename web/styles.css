@@ -70,7 +70,9 @@ html.signed-out #auth-gate {
   align-items: center; justify-content: center;
   background: radial-gradient(1200px 800px at 50% -10%, #1a1640, #0a0812 60%);
 }
-html.signed-out main, html.signed-out #settings-btn, html.signed-out #acct-chip { display: none !important; }
+html.signed-out main, html.signed-out #settings-btn, html.signed-out #download-btn, html.signed-out #acct-chip { display: none !important; }
+#download-btn { text-decoration: none; display: inline-flex; align-items: center; margin-left: auto; }
+#settings-btn { margin-left: 8px; }
 .auth-card { text-align: center; max-width: 420px; padding: 32px; }
 .auth-card h1 { font-size: 40px; margin: 10px 0 6px; }
 .auth-card p { color: #b8b4d0; margin: 0 0 20px; }
