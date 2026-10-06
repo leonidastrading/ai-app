@@ -21,7 +21,7 @@
     const seen = new Set(); const out = [];
     for (const r of list) {
       if (!r || typeof r !== "object") continue;
-      const key = r.id || ((r.providerId || "") + "|" + (r.at || 0) + "|" + String(r.text || "").slice(0, 40));
+      const key = (r.providerId || "") + "|" + (r.at || 0) + "|" + String(r.text || "").slice(0, 60);
       if (seen.has(key)) continue;
       seen.add(key); out.push(r);
     }

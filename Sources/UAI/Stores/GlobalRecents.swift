@@ -1,5 +1,13 @@
 import Foundation
 
+/// An attachment carried with a recent prompt (synced from another app, e.g.
+/// the web "Send to UAI"). `dataURL` is a small image thumbnail when present.
+struct RecentAttachment: Codable, Hashable {
+    var name: String
+    var type: String?
+    var dataURL: String?
+}
+
 /// A prompt you sent to any AI — typed directly in that AI, or routed through
 /// Universal AI. Shown in the right bar's "Recent" section.
 struct RecentPrompt: Codable, Identifiable, Hashable {
@@ -7,6 +15,7 @@ struct RecentPrompt: Codable, Identifiable, Hashable {
     let provider: ProviderID
     let text: String
     let date: Date
+    var attachments: [RecentAttachment]? = nil
 }
 
 /// Recent prompts across every AI, captured as you send them. Stored on this Mac.

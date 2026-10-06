@@ -63,8 +63,32 @@ final class CloudSync: ObservableObject {
 
     private func schedulePush() {
         guard auth.isSignedIn, Date() > suppressUntil else { return }
-        let blob = buildBlob()
-        Task { await auth.push(blob) }
+        Task {
+            var blob = buildBlob()
+            // Merge recents with the current remote so we never drop entries another
+            // device added (e.g. "Send to UAI" from the web) while this app was open.
+            let remote = await auth.pull()
+            if let remoteRecents = remote["recents"] as? [[String: Any]] {
+                blob["recents"] = Self.mergeRawRecents((blob["recents"] as? [[String: Any]] ?? []) + remoteRecents)
+            }
+            await auth.push(blob)
+        }
+    }
+
+    private static func recentKey(providerId: String, at: Any?, text: String) -> String {
+        let ms = (at as? Int) ?? Int((at as? Double) ?? 0)
+        return providerId + "|" + String(ms) + "|" + String(text.prefix(60))
+    }
+    /// Merge raw recent dictionaries: dedupe by content, newest-first, bounded.
+    private static func mergeRawRecents(_ list: [[String: Any]]) -> [[String: Any]] {
+        var seen = Set<String>(); var out: [[String: Any]] = []
+        for r in list {
+            let key = recentKey(providerId: r["providerId"] as? String ?? "", at: r["at"], text: r["text"] as? String ?? "")
+            if seen.contains(key) { continue }
+            seen.insert(key); out.append(r)
+        }
+        out.sort { (($0["at"] as? Int) ?? Int(($0["at"] as? Double) ?? 0)) > (($1["at"] as? Int) ?? Int(($1["at"] as? Double) ?? 0)) }
+        return Array(out.prefix(80))
     }
 
     // MARK: - blob <-> local state
@@ -80,8 +104,17 @@ final class CloudSync: ObservableObject {
             ["id": $0.id, "name": $0.name, "url": $0.url, "strengths": $0.strengths]
         }
         blob["memory"] = memory.allTexts
-        blob["recents"] = recents.items.prefix(60).map {
-            ["text": $0.text, "providerId": $0.provider.rawValue, "at": Int($0.date.timeIntervalSince1970 * 1000)]
+        blob["recents"] = recents.items.prefix(60).map { r -> [String: Any] in
+            var d: [String: Any] = ["text": r.text, "providerId": r.provider.rawValue, "at": Int(r.date.timeIntervalSince1970 * 1000)]
+            if let atts = r.attachments, !atts.isEmpty {
+                d["attachments"] = atts.map { a -> [String: Any] in
+                    var ad: [String: Any] = ["name": a.name]
+                    if let t = a.type { ad["type"] = t }
+                    if let u = a.dataURL { ad["dataURL"] = u }
+                    return ad
+                }
+            }
+            return d
         }
         blob["railOrder"] = registry.order
         blob["hidden"] = registry.all.map(\.id.rawValue).filter { isHidden($0) }
@@ -109,13 +142,25 @@ final class CloudSync: ObservableObject {
         }
 
         if let recentsArr = blob["recents"] as? [[String: Any]] {
-            let items = recentsArr.compactMap { item -> RecentPrompt? in
+            let incoming = recentsArr.compactMap { item -> RecentPrompt? in
                 guard let text = item["text"] as? String, let pid = item["providerId"] as? String else { return nil }
                 let ms = (item["at"] as? Double) ?? Double(item["at"] as? Int ?? 0)
                 let date = ms > 0 ? Date(timeIntervalSince1970: ms / 1000) : Date()
-                return RecentPrompt(provider: ProviderID(rawValue: pid), text: text, date: date)
+                let atts = (item["attachments"] as? [[String: Any]])?.compactMap { a -> RecentAttachment? in
+                    guard let name = a["name"] as? String else { return nil }
+                    return RecentAttachment(name: name, type: a["type"] as? String, dataURL: a["dataURL"] as? String)
+                }
+                return RecentPrompt(provider: ProviderID(rawValue: pid), text: text, date: date, attachments: atts)
             }
-            recents.replaceAll(items)
+            // Merge with whatever is local so a pull never drops local-only entries.
+            var seen = Set<String>(); var merged: [RecentPrompt] = []
+            for r in incoming + recents.items {
+                let key = Self.recentKey(providerId: r.provider.rawValue, at: Int(r.date.timeIntervalSince1970 * 1000), text: r.text)
+                if seen.contains(key) { continue }
+                seen.insert(key); merged.append(r)
+            }
+            merged.sort { $0.date > $1.date }
+            recents.replaceAll(Array(merged.prefix(80)))
         }
 
         if let order = blob["railOrder"] as? [String] {

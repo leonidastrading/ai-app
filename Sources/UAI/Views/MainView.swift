@@ -127,6 +127,9 @@ struct TopBar: ToolbarContent {
     @EnvironmentObject private var app: AppState
     @EnvironmentObject private var webViews: WebViewStore
 
+    private var isProvider: Bool { if case .provider = app.destination { return true } else { return false } }
+    private func reloadCurrent() { if case .provider(let id) = app.destination { webViews.reload(id) } }
+
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button { app.back(webViews: webViews) } label: { Image(systemName: "chevron.left") }
@@ -135,10 +138,15 @@ struct TopBar: ToolbarContent {
             Button { app.forward(webViews: webViews) } label: { Image(systemName: "chevron.right") }
                 .help("Forward (⌘])")
                 .disabled(!app.canGoForward(webViews: webViews))
+            Button { reloadCurrent() } label: { Image(systemName: "arrow.clockwise") }
+                .help("Reload (⌘R)")
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(!isProvider)
         }
         ToolbarItem(placement: .principal) {
             GlobalSearchField()
         }
+
         ToolbarItemGroup(placement: .primaryAction) {
             Button { app.toggleMemory() } label: {
                 Label("Memory", systemImage: "brain.head.profile")

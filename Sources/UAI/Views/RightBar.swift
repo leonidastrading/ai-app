@@ -105,6 +105,19 @@ struct RightBar: View {
                                                 .font(.caption2).foregroundStyle(.tertiary)
                                         }
                                         Text(entry.text).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                        if let atts = entry.attachments, !atts.isEmpty {
+                                            HStack(spacing: 4) {
+                                                ForEach(Array(atts.prefix(4).enumerated()), id: \.offset) { _, a in
+                                                    if let urlStr = a.dataURL, let data = Self.decodeDataURL(urlStr), let img = NSImage(data: data) {
+                                                        Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                                                            .frame(width: 26, height: 26).clipShape(RoundedRectangle(cornerRadius: 5))
+                                                    } else {
+                                                        Image(systemName: "paperclip").font(.caption2).foregroundStyle(.tertiary)
+                                                    }
+                                                }
+                                            }
+                                            .padding(.top, 2)
+                                        }
                                     }
                                 }
                                 .padding(8)
@@ -120,6 +133,12 @@ struct RightBar: View {
     }
 
     // MARK: Suggestions (bottom third)
+
+    /// Decode the base64 payload of a `data:...;base64,...` URL.
+    private static func decodeDataURL(_ s: String) -> Data? {
+        guard let comma = s.range(of: ",") else { return nil }
+        return Data(base64Encoded: String(s[comma.upperBound...]))
+    }
 
     private struct Suggestion: Identifiable { let id = UUID(); let icon: String; let text: String }
     private let suggestionList: [Suggestion] = [

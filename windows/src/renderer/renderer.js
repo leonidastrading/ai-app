@@ -66,13 +66,29 @@ function ensureSignedIn() {
   });
 }
 
+// Merge recent entries from multiple devices: dedupe, newest-first, bounded.
+function mergeRecents(list) {
+  const seen = new Set(); const out = [];
+  for (const r of list) {
+    if (!r || typeof r !== "object") continue;
+    const key = (r.providerId || "") + "|" + (r.at || 0) + "|" + String(r.text || "").slice(0, 60);
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(r);
+  }
+  out.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return out.slice(0, 80);
+}
+
 async function syncPullIntoState() {
   let blob = {};
   try { blob = (await window.api.syncPull()) || {}; } catch (e) {}
   const patch = {};
+  let localRecents = [];
+  try { localRecents = (await window.api.getState()).universalRecents || []; } catch (e) {}
   for (const bk in SYNC_MAP) {
     const v = blob[bk];
     if (bk === "profile") { if (v && typeof v === "object") patch.profile = v; }
+    else if (bk === "recents") { if (Array.isArray(v)) patch.universalRecents = mergeRecents(v.concat(localRecents)); }
     else if (Array.isArray(v)) patch[SYNC_MAP[bk]] = v;
   }
   // First sign-in with nothing stored yet: seed the profile from the Google account.
@@ -103,6 +119,14 @@ async function doSyncPush() {
     if (bk === "profile") { if (v && typeof v === "object") blob.profile = v; }
     else if (Array.isArray(v)) blob[bk] = v;
   }
+  // Merge recents with the current remote so we never drop entries another
+  // device added (e.g. "Send to UAI" from the web) while this app was open.
+  try {
+    const remote = await window.api.syncPull();
+    if (remote && Array.isArray(remote.recents)) {
+      blob.recents = mergeRecents((blob.recents || []).concat(remote.recents));
+    }
+  } catch (e) {}
   try { await window.api.syncPush(blob); } catch (e) {}
 }
 
@@ -622,7 +646,14 @@ function renderRecents() {
   const box = document.getElementById("universal-recents");
   if (!recents.length) { box.innerHTML = ""; return; }
   box.innerHTML = `<div class="sr-ai" style="margin-bottom:6px">Recent</div>` +
-    recents.map((r, i) => `<div class="recent" data-i="${i}"><span class="recent-text">${escapeHtml(r.text)}</span>${r.at ? `<span class="recent-time">${escapeHtml(fmtWhen(r.at))}</span>` : ""}</div>`).join("");
+    recents.map((r, i) => {
+      const atts = Array.isArray(r.attachments) ? r.attachments : [];
+      const thumbs = atts.filter((a) => a && a.dataURL).slice(0, 4).map((a) => `<img class="recent-thumb" src="${a.dataURL}" alt="">`).join("");
+      const nonImg = atts.filter((a) => a && !a.dataURL).length;
+      const docLabel = nonImg ? `<span class="recent-files">📎 ${nonImg}</span>` : "";
+      const time = r.at ? `<span class="recent-time">${escapeHtml(fmtWhen(r.at))}</span>` : "";
+      return `<div class="recent" data-i="${i}"><span class="recent-text">${escapeHtml(r.text)}</span>${thumbs}${docLabel}${time}</div>`;
+    }).join("");
   box.querySelectorAll(".recent").forEach((el) => {
     el.onclick = () => { const r = recents[+el.dataset.i]; document.getElementById("universal-input").value = r.text; };
   });

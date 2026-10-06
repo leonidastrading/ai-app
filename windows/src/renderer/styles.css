@@ -128,6 +128,8 @@ webview.show { display: flex; }
 .recent:hover { background: var(--bg-elev); color: var(--text); }
 .recent .recent-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent .recent-time { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); opacity: 0.8; }
+.recent .recent-thumb { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 5px; object-fit: cover; }
+.recent .recent-files { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); }
 
 /* media */
 .media-head { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
