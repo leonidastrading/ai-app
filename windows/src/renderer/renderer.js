@@ -604,15 +604,21 @@ function deliverScript(text, files, allowDrop, autoSend) {
 function activeWebview() { return isProvider(current) ? webviews[current] : null; }
 function updateNavButtons() {
   const wv = activeWebview();
-  document.getElementById("back").disabled = !(wv && wv.canGoBack && wv.canGoBack());
-  document.getElementById("forward").disabled = !(wv && wv.canGoForward && wv.canGoForward());
+  // canGoBack/canGoForward throw until the webview is dom-ready, and this runs
+  // on a timer — so only query them once the guest page is ready, guarded.
+  let back = false, fwd = false;
+  if (wv && wv.__ready) {
+    try { back = wv.canGoBack(); fwd = wv.canGoForward(); } catch (e) { back = fwd = false; }
+  }
+  document.getElementById("back").disabled = !back;
+  document.getElementById("forward").disabled = !fwd;
   document.getElementById("reload").disabled = !wv;
   // The "paste a login link" button only makes sense while viewing an AI.
   document.getElementById("reconnect").style.display = wv ? "inline-flex" : "none";
 }
-document.getElementById("back").onclick = () => { const w = activeWebview(); if (w && w.canGoBack()) w.goBack(); };
-document.getElementById("forward").onclick = () => { const w = activeWebview(); if (w && w.canGoForward()) w.goForward(); };
-document.getElementById("reload").onclick = () => { const w = activeWebview(); if (w) w.reload(); };
+document.getElementById("back").onclick = () => { const w = activeWebview(); try { if (w && w.__ready && w.canGoBack()) w.goBack(); } catch (e) {} };
+document.getElementById("forward").onclick = () => { const w = activeWebview(); try { if (w && w.__ready && w.canGoForward()) w.goForward(); } catch (e) {} };
+document.getElementById("reload").onclick = () => { const w = activeWebview(); try { if (w) w.reload(); } catch (e) {} };
 
 // -------------------------------------------------------------- badges
 function updateBadges() {
