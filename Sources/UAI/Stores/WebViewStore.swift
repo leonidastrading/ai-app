@@ -808,7 +808,7 @@ extension WebViewStore {
       // stop button, and never runs during a stop cycle, so busy pages can't
       // block the reliable path.
       let stopBusy = false, stopGone = 0;
-      let lastTotal = -1, lastCount = -1, grow = 0, growActive = false, growSince = 0;
+      let lastTotal = -1, lastCount = -1, sawGrowth = false, lastChange = 0;
       setInterval(() => {
         const now = Date.now();
         const stop = [...document.querySelectorAll(stopSelector)].find(b => {
@@ -821,24 +821,25 @@ extension WebViewStore {
         else if (stopBusy) {
           if (!stopGone) stopGone = now;
           if (now - stopGone > 1500) {
-            stopBusy = false; stopGone = 0; grow = 0; growActive = false;
+            stopBusy = false; stopGone = 0; sawGrowth = false;
             lastTotal = m.total; lastCount = m.count;
             fire(m);
             return;
           }
         }
 
-        if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
-        // Growth-settle runs ALWAYS — not only when no Stop button is present —
-        // so a persistent/stuck Stop control (e.g. Muse's composer stop button,
-        // which is visible even when idle) can't block detection. The stop-gone
-        // path above is just a faster trigger for sites with a transient Stop.
-        // A real text delta (>12 chars, not a 1-char tick) arms the timer, so
-        // ordinary page churn doesn't fire a notification.
-        const grew = (m.total - lastTotal) > 12 || m.count > lastCount;
-        if (grew) { growActive = true; growSince = now; }
-        // Reply is done once growth has settled ~1.8s (also covers quick replies).
-        if (growActive && now - growSince > 1800) { growActive = false; grow = 0; fire(m); }
+        if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; lastChange = now; return; }
+        // Fire when the reply has GROWN and then the page goes fully STABLE — no
+        // text change up OR down — for the settle window. This is the key to not
+        // false-firing on agent UIs (e.g. Claude Code "thinking/running"), which
+        // churn constantly and so never reach a stable window; they only notify
+        // once everything truly settles. Requiring prior growth keeps idle pages
+        // from firing. The stop-gone path above is a faster trigger when a real
+        // transient Stop button exists; this covers persistent/absent ones.
+        const delta = m.total - lastTotal;
+        if (delta > 12) sawGrowth = true;
+        if (Math.abs(delta) > 12 || m.count !== lastCount) lastChange = now;
+        if (sawGrowth && now - lastChange > 2500) { sawGrowth = false; fire(m); }
         lastTotal = m.total; lastCount = m.count;
       }, 700);
     })();
