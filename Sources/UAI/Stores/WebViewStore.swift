@@ -757,8 +757,6 @@ extension WebViewStore {
     (() => {
       if (window.__uaiReplyWatch) return;
       window.__uaiReplyWatch = true;
-      const hasHandler = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.uai);
-      console.log('[UAI] reply-watcher injected on', location.host, 'handler:', hasHandler);
       const stopSelector = [
         'button[aria-label*="Stop" i]', 'button[data-testid*="stop" i]',
         '[role="button"][aria-label*="Stop" i]', 'button[title*="Stop" i]',
@@ -776,16 +774,30 @@ extension WebViewStore {
         const els = document.querySelectorAll(replySelector);
         let total = 0;                       // textContent: cheap, no reflow
         for (const e of els) total += (e.textContent || '').length;
-        return { total, count: els.length, lastEl: els.length ? els[els.length - 1] : null };
+        // Preview source = the LAST matched element that actually has text, so
+        // trailing UI chrome (empty buttons/containers) doesn't blank the
+        // preview and suppress the event.
+        let lastEl = null;
+        for (let i = els.length - 1; i >= 0; i--) {
+          if (((els[i].innerText || '').trim().length) > 20) { lastEl = els[i]; break; }
+        }
+        if (!lastEl && els.length) lastEl = els[els.length - 1];
+        return { total, count: els.length, lastEl };
       };
+      // Strip private-use-area glyphs (icon fonts render as tofu boxes outside
+      // their font) and control chars, so previews are readable; keep emoji.
+      const clean = (s) => (s || '')
+        .replace(/[\\uE000-\\uF8FF]/g, '')
+        .replace(/[\\uDB80-\\uDBFF][\\uDC00-\\uDFFF]/g, '')
+        .replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uFFFD]/g, '')
+        .replace(/\\s+/g, ' ').trim();
       let lastFired = '';
       const fire = (m) => {
-        const preview = ((m.lastEl && m.lastEl.innerText) || '').replace(/\\s+/g, ' ').trim().slice(0, 220);
+        const preview = clean((m.lastEl && m.lastEl.innerText) || '').slice(0, 220);
         if (preview && preview !== lastFired) {
           lastFired = preview;
-          console.log('[UAI] replyDone ->', preview.slice(0, 50));
-          try { window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: document.title, preview }); }
-          catch (e) { console.log('[UAI] postMessage FAILED', String(e)); }
+          try { window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: clean(document.title), preview }); }
+          catch (e) {}
         }
         try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {}
         setTimeout(() => { try { window.__uaiScanMedia && window.__uaiScanMedia(); } catch (e) {} }, 2500);
