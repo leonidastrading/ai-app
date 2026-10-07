@@ -829,18 +829,16 @@ extension WebViewStore {
         }
 
         if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
-        if (!stop && !stopBusy) {
-          // Any meaningful growth arms the "settling" timer — even a short reply
-          // that only grows for a moment. We require a real text delta (not a
-          // 1-char tick) so ordinary page churn doesn't trigger a notification.
-          const grew = (m.total - lastTotal) > 12 || m.count > lastCount;
-          if (grew) { growActive = true; growSince = now; }
-          // Reply is considered done once growth has settled ~1.8s. Works for
-          // quick replies (which never accumulated the old 3-sample streak).
-          if (growActive && now - growSince > 1800) { growActive = false; grow = 0; fire(m); }
-        } else {
-          grow = 0; growActive = false;
-        }
+        // Growth-settle runs ALWAYS — not only when no Stop button is present —
+        // so a persistent/stuck Stop control (e.g. Muse's composer stop button,
+        // which is visible even when idle) can't block detection. The stop-gone
+        // path above is just a faster trigger for sites with a transient Stop.
+        // A real text delta (>12 chars, not a 1-char tick) arms the timer, so
+        // ordinary page churn doesn't fire a notification.
+        const grew = (m.total - lastTotal) > 12 || m.count > lastCount;
+        if (grew) { growActive = true; growSince = now; }
+        // Reply is done once growth has settled ~1.8s (also covers quick replies).
+        if (growActive && now - growSince > 1800) { growActive = false; grow = 0; fire(m); }
         lastTotal = m.total; lastCount = m.count;
       }, 700);
     })();
