@@ -791,8 +791,15 @@ extension WebViewStore {
         .replace(/[\\uDB80-\\uDBFF][\\uDC00-\\uDFFF]/g, '')
         .replace(/[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uFFFD]/g, '')
         .replace(/\\s+/g, ' ').trim();
+      // Claude Code is an agentic tool: it works for a long time and keeps a
+      // stable status string ("Thinking running") while still going, so no
+      // text/stop heuristic can tell "working" from "done" — detecting replies
+      // there only produces false notifications. Skip reply detection for it.
+      // Checked live (not once) so SPA navigation within the tab is honored.
+      const isAgentPage = () => (location.host === 'claude.ai' && /^\\/code(\\/|$)/.test(location.pathname));
       let lastFired = '';
       const fire = (m) => {
+        if (isAgentPage()) return;
         const preview = clean((m.lastEl && m.lastEl.innerText) || '').slice(0, 220);
         if (preview && preview !== lastFired) {
           lastFired = preview;
