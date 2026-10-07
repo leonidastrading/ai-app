@@ -58,25 +58,40 @@ function replyWatcher() {
     const els = document.querySelectorAll(replySel);
     let total = 0;                         // textContent: cheap, no reflow
     for (const e of els) total += (e.textContent || "").length;
-    return { total, count: els.length, lastEl: els.length ? els[els.length - 1] : null };
+    // Preview source = last matched element that actually has text, so trailing
+    // UI chrome doesn't blank the preview and suppress the event.
+    let lastEl = null;
+    for (let i = els.length - 1; i >= 0; i--) {
+      if (((els[i].innerText || "").trim().length) > 20) { lastEl = els[i]; break; }
+    }
+    if (!lastEl && els.length) lastEl = els[els.length - 1];
+    return { total, count: els.length, lastEl };
   };
+  // Strip private-use-area icon-font glyphs (tofu boxes) and control chars.
+  const clean = (s) => (s || "")
+    .replace(/[-]/g, "")
+    .replace(/[\uDB80-\uDBFF][\uDC00-\uDFFF]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F�]/g, "")
+    .replace(/\s+/g, " ").trim();
+  // Claude Code is an agentic tool with no reliable "done" signal (stable
+  // status text while working), so detecting replies there only false-fires.
+  const isAgentPage = () => (location.host === "claude.ai" && /^\/code(\/|$)/.test(location.pathname));
   let lastFired = "";
   const fire = (m) => {
-    const preview = ((m.lastEl && m.lastEl.innerText) || "").replace(/\s+/g, " ").trim().slice(0, 220);
+    if (isAgentPage()) return;
+    const preview = clean((m.lastEl && m.lastEl.innerText) || "").slice(0, 220);
     if (preview && preview !== lastFired) {
       lastFired = preview;
-      ipcRenderer.sendToHost("reply", { title: document.title, preview });
+      ipcRenderer.sendToHost("reply", { title: clean(document.title), preview });
     }
   };
-  // Two independent signals:
-  //  1) Stop button (definitive): it shows while generating; when it goes away
-  //     the reply is done — fire ~1.5s later, no matter what else changes on the
-  //     page. This is the reliable path for ChatGPT/Claude/Gemini/Grok.
-  //  2) Text growth (fallback): for sites with no recognizable stop button, fire
-  //     when the reply text has grown and then held steady. Only runs when no
-  //     stop button is involved, so busy pages can't block the stop path.
+  // Signals: (1) a transient Stop button disappearing is a fast "done" trigger;
+  // (2) otherwise, fire when the reply has GROWN and then the page is fully
+  // STABLE (no change up or down) for ~2.5s. The stability rule keeps churning
+  // agent UIs from false-firing and isn't blocked by a persistent Stop button
+  // (e.g. Muse's composer stop), which the old "only when no stop" gate was.
   let stopBusy = false, stopGone = 0;
-  let lastTotal = -1, lastCount = -1, grow = 0, growActive = false, growSince = 0;
+  let lastTotal = -1, lastCount = -1, sawGrowth = false, lastChange = 0;
   setInterval(() => {
     const now = Date.now();
     const stop = [...document.querySelectorAll(stopSel)].find((b) => {
@@ -89,22 +104,18 @@ function replyWatcher() {
     else if (stopBusy) {
       if (!stopGone) stopGone = now;
       if (now - stopGone > 1500) {
-        stopBusy = false; stopGone = 0; grow = 0; growActive = false;
+        stopBusy = false; stopGone = 0; sawGrowth = false;
         lastTotal = m.total; lastCount = m.count;
         fire(m);
         return;
       }
     }
 
-    if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; return; }
-    if (!stop && !stopBusy) {
-      const grew = m.total > lastTotal || m.count > lastCount;
-      if (grew) { grow++; growSince = now; if (grow >= 3) growActive = true; }
-      else grow = 0;
-      if (growActive && now - growSince > 3000) { growActive = false; grow = 0; fire(m); }
-    } else {
-      grow = 0; growActive = false;   // the stop-button path owns this cycle
-    }
+    if (lastTotal < 0) { lastTotal = m.total; lastCount = m.count; lastChange = now; return; }
+    const delta = m.total - lastTotal;
+    if (delta > 12) sawGrowth = true;
+    if (Math.abs(delta) > 12 || m.count !== lastCount) lastChange = now;
+    if (sawGrowth && now - lastChange > 2500) { sawGrowth = false; fire(m); }
     lastTotal = m.total; lastCount = m.count;
   }, 700);
 }
