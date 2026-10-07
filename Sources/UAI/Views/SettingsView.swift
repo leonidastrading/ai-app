@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import AppKit
 
 struct SettingsView: View {
     var body: some View {
@@ -136,6 +137,13 @@ private struct ProviderSettingsRow: View {
             Text(provider.name).frame(width: 80, alignment: .leading)
             TextField("", text: $url, prompt: Text(provider.defaultHomeURL.absoluteString))
                 .textFieldStyle(.roundedBorder)
+            Button {
+                let u = url.isEmpty ? provider.defaultHomeURL.absoluteString : url
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(u, forType: .string)
+            } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(.borderless)
+                .help("Copy this AI's URL")
             if provider.isCustom {
                 Button(role: .destructive) { ProviderRegistry.shared.remove(provider.id) } label: {
                     Image(systemName: "trash")
