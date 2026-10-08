@@ -34,7 +34,7 @@ module.exports = async (req, res) => {
         "anthropic-beta": "server-side-fallback-2026-07-01",
       },
       body: JSON.stringify({
-        model: "claude-opus-5-5",
+        model: "claude-haiku-4-5",
         max_tokens: 1024,
         system: "You route a user's request to the single best AI assistant. Choose only from the list. Answer with JSON.",
         messages: [{ role: "user", content: `AIs:\n${menu}\n\nRequest:\n${prompt}\n\nPick the best one.` }],
