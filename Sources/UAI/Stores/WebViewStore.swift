@@ -798,8 +798,22 @@ extension WebViewStore {
       // Checked live (not once) so SPA navigation within the tab is honored.
       const isAgentPage = () => (location.host === 'claude.ai' && /^\\/code(\\/|$)/.test(location.pathname));
       let lastFired = '';
+      // What you've already looked at: the largest reply length that was on
+      // screen while this tab was visible AND focused. Lets us drop a late
+      // "reply done" ping for something you already read in UAI — even when the
+      // page's timer was throttled in the background and only detected "done" a
+      // minute late (macOS throttles timers in occluded/background web views).
+      let seenTotal = 0;
+      const present = () => (document.visibilityState === 'visible' && document.hasFocus());
+      const markSeen = () => { if (present()) { try { seenTotal = Math.max(seenTotal, measure().total); } catch (e) {} } };
+      document.addEventListener('visibilitychange', markSeen, true);
+      window.addEventListener('focus', markSeen, true);
       const fire = (m) => {
         if (isAgentPage()) return;
+        // You're looking at it right now, or you've already seen a reply at
+        // least this long on screen → no notification. Otherwise it finished
+        // while you were away, so it's worth a ping.
+        if (present() || m.total <= seenTotal) { seenTotal = Math.max(seenTotal, m.total); return; }
         const preview = clean((m.lastEl && m.lastEl.innerText) || '').slice(0, 220);
         if (preview && preview !== lastFired) {
           lastFired = preview;
@@ -823,6 +837,13 @@ extension WebViewStore {
           return b.offsetParent !== null && !label.includes('record') && !label.includes('dictat');
         });
         const m = measure();
+
+        // Keep the "already seen" watermark current while you're looking. A
+        // total much shorter than we've marked means a different/cleared chat,
+        // so reset it (to the current length if you're here, else 0 so the next
+        // reply there can still notify).
+        if (m.total + 50 < seenTotal) seenTotal = present() ? m.total : 0;
+        else if (present()) seenTotal = Math.max(seenTotal, m.total);
 
         if (stop) { stopBusy = true; stopGone = 0; }
         else if (stopBusy) {
