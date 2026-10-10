@@ -211,6 +211,18 @@
     </form>
   </dialog>
 
+  <dialog id="edit-url-dialog">
+    <form method="dialog">
+      <h3>Edit address — <span id="edit-url-ai"></span></h3>
+      <p class="hint">Loads this address in the AI and remembers it across restarts. Add https:// if you leave it off.</p>
+      <label>Web address<input id="edit-url-input" required placeholder="https://…" /></label>
+      <menu>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button value="ok" id="edit-url-ok">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
   <script src="galaxy.js"></script>
   <script src="renderer.js"></script>
 </body>

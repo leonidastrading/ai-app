@@ -69,6 +69,7 @@ let recents = [];
 let notifications = [];
 let allKnown = [];         // every provider (built-in + custom), unfiltered
 let hidden = new Set();    // provider ids hidden from the rail
+let providerUrls = {};     // id -> custom home URL (overrides the provider default)
 let memory = [];           // user's reusable notes
 
 // -------------------------------------------------------------- auth + sync
@@ -276,6 +277,7 @@ async function loadProviders(state) {
   const all = await window.api.providers();
   allKnown = all;                                   // full list incl. hidden
   hidden = new Set(state.hiddenProviders || []);
+  providerUrls = state.providerUrls || {};          // custom home-URL overrides
   const order = state.railOrder || [];
   const byId = Object.fromEntries(all.map((p) => [p.id, p]));
   const ordered = [];
@@ -284,8 +286,11 @@ async function loadProviders(state) {
   providers = ordered.filter((p) => !hidden.has(p.id));   // rail shows non-hidden
 }
 
+// A provider's effective home URL — the user's override if set, else the default.
+function homeUrlFor(p) { return (p && providerUrls && providerUrls[p.id]) || (p && p.home); }
+
 function faviconFor(p) {
-  try { return `https://www.google.com/s2/favicons?sz=128&domain=${new URL(p.home).host}`; }
+  try { return `https://www.google.com/s2/favicons?sz=128&domain=${new URL(homeUrlFor(p)).host}`; }
   catch (e) { return ""; }
 }
 
@@ -307,9 +312,43 @@ function railItem(p) {
     <span class="label">${escapeHtml(p.name)}</span>
     <span class="badge" style="display:none"></span>`;
   el.addEventListener("click", () => select(p.id));
+  el.addEventListener("contextmenu", (e) => { e.preventDefault(); openEditUrl(p.id); });
   wireDrag(el);
   return el;
 }
+
+// Edit an AI's web address: persists the override, then loads it right away in
+// that AI (built-in or custom). Right-click a rail icon, or use Settings.
+const editUrlDialog = document.getElementById("edit-url-dialog");
+let editingUrlId = null;
+function openEditUrl(id) {
+  const p = (providers.find((x) => x.id === id)) || (allKnown.find((x) => x.id === id));
+  if (!p) return;
+  editingUrlId = id;
+  document.getElementById("edit-url-ai").textContent = p.name;
+  const input = document.getElementById("edit-url-input");
+  input.value = homeUrlFor(p) || "";
+  editUrlDialog.showModal();
+  setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 30);
+}
+if (editUrlDialog) editUrlDialog.addEventListener("close", async () => {
+  const input = document.getElementById("edit-url-input");
+  let url = input.value.trim();
+  input.value = "";
+  const id = editingUrlId; editingUrlId = null;
+  if (editUrlDialog.returnValue !== "ok" || !id) return;
+  if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+  const map = Object.assign({}, providerUrls);
+  if (url) map[id] = url; else delete map[id];
+  providerUrls = map;
+  await setState({ providerUrls: map });
+  const p = (providers.find((x) => x.id === id)) || (allKnown.find((x) => x.id === id));
+  const home = url || (p && p.home);
+  const wv = ensureWebview(id);
+  if (wv && home) { try { wv.loadURL(home); } catch (e) { wv.setAttribute("src", home); } }
+  buildRail();           // refresh favicon for the new domain
+  select(id);
+});
 
 function wireDrag(el) {
   el.addEventListener("dragstart", (e) => { el.classList.add("dragging"); e.dataTransfer.setData("text/plain", el.dataset.id); });
@@ -387,7 +426,7 @@ function ensureWebview(id, initialURL) {
   // reply-finished detector never fires — so no badge/notification when you've
   // navigated to another AI, which is exactly when it's needed.
   wv.setAttribute("webpreferences", "backgroundThrottling=false");
-  wv.setAttribute("src", initialURL || p.home);
+  wv.setAttribute("src", initialURL || homeUrlFor(p));
   wv.dataset.id = id;
   paneWebviews.appendChild(wv);
   webviews[id] = wv;
@@ -1098,9 +1137,12 @@ function buildSettingsProviders() {
     const action = p.custom
       ? `<a href="#" class="sp-remove" data-id="${p.id}">Remove</a>`
       : `<a href="#" class="sp-toggle" data-id="${p.id}">${isHidden ? "Show" : "Hide"}</a>`;
+    const edit = `<a href="#" class="sp-edit" data-id="${p.id}">Edit URL</a>`;
     return `<div class="sp-row" style="${isHidden ? "opacity:.5" : ""}">
-      <img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span>${action}</div>`;
+      <img src="${faviconFor(p)}" onerror="this.style.display='none'"/><span>${escapeHtml(p.name)}</span>${edit}${action}</div>`;
   }).join("");
+
+  box.querySelectorAll(".sp-edit").forEach((a) => a.onclick = (e) => { e.preventDefault(); openEditUrl(a.dataset.id); });
 
   const refresh = async () => { await loadProviders(await window.api.getState()); buildRail(); buildSettingsProviders(); };
   box.querySelectorAll(".sp-remove").forEach((a) => a.onclick = async (e) => {
