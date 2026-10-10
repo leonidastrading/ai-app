@@ -113,11 +113,10 @@ function replyWatcher() {
     });
     const m = measure();
 
-    // Keep the "already seen" watermark current while you're looking. A total
-    // much shorter than we've marked means a different/cleared chat, so reset it
-    // (to the current length if you're here, else 0 so the next reply can ping).
+    // A total much shorter than we've marked means a different/cleared chat, so
+    // reset the "already seen" watermark (to the current length if you're here,
+    // else 0 so the next reply can ping).
     if (m.total + 50 < seenTotal) seenTotal = present() ? m.total : 0;
-    else if (present()) seenTotal = Math.max(seenTotal, m.total);
 
     if (stop) { stopBusy = true; stopGone = 0; }
     else if (stopBusy) {
@@ -136,6 +135,11 @@ function replyWatcher() {
     if (Math.abs(delta) > 12 || m.count !== lastCount) lastChange = now;
     if (sawGrowth && now - lastChange > 2500) { sawGrowth = false; fire(m); }
     lastTotal = m.total; lastCount = m.count;
+
+    // Mark "already seen" only while you're looking at a SETTLED reply — never
+    // mid-stream. Marking during streaming would suppress the very ping you want
+    // when you glance away just before it finishes.
+    if (present() && !sawGrowth && now - lastChange > 2500) seenTotal = Math.max(seenTotal, m.total);
   }, 700);
 }
 
