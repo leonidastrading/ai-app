@@ -13,7 +13,7 @@ struct AddAISheet: View {
         ("Mistral", "https://chat.mistral.ai/", "fast answers, European languages"),
         ("Copilot", "https://copilot.microsoft.com/", "Microsoft 365, Bing search"),
         ("Qwen", "https://chat.qwen.ai/", "multilingual chat, coding"),
-        ("Kimi", "https://www.kimi.com/", "very long documents"),
+        ("Kimi", "https://www.kimi.ai/", "very long documents"),
         ("Midjourney", "https://www.midjourney.com/imagine", "artistic image generation"),
     ]
 

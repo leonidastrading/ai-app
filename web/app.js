@@ -362,7 +362,7 @@ const ADD_SUGGESTIONS = [
   { name: "Mistral", url: "https://chat.mistral.ai/", strengths: "fast open-weight chat" },
   { name: "Copilot", url: "https://copilot.microsoft.com/", strengths: "Microsoft Copilot" },
   { name: "Qwen", url: "https://chat.qwen.ai/", strengths: "multilingual, coding" },
-  { name: "Kimi", url: "https://www.kimi.com/", strengths: "long-document analysis" },
+  { name: "Kimi", url: "https://www.kimi.ai/", strengths: "long-document analysis" },
   { name: "Midjourney", url: "https://www.midjourney.com/", strengths: "image generation" },
 ];
 function renderSettings() { renderSuggestions(); renderProvidersList(); }
