@@ -91,8 +91,12 @@ final class WebViewStore: NSObject, ObservableObject {
             source: Self.captureSendsScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         // Turn off autocorrect suggestions in the AIs' own text boxes, keeping
         // spellcheck (the red underline) on. Runs in every frame.
+        // Web views here don't show the pages' own web notifications, so a site's
+        // Notification permission stays "default" forever and it keeps nagging you
+        // to "enable notifications." Settle it to a fixed answer at document start
+        // so the prompts stop — UAI delivers its own native reply notifications.
         config.userContentController.addUserScript(WKUserScript(
-            source: Self.noAutocorrectScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            source: Self.notificationStubScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -670,6 +674,40 @@ extension WebViewStore {
 
     /// Sets autocorrect="off" (WebKit honors it) on every editable field so
     /// the OS stops popping word suggestions, while leaving spellcheck on.
+    // Settle the page's Notification permission so sites stop nagging to "enable
+    // notifications." These web views don't display page web-notifications anyway
+    // (UAI sends its own native reply notifications), so a fixed "denied" both
+    // silences the prompt and stops sites from attempting web-push flows that
+    // can't work here. Runs before the page's own scripts, in every frame.
+    static let notificationStubScript = """
+    (() => {
+      try {
+        const DENIED = 'denied';
+        function UAINotification(title, options) {
+          this.title = title; this.options = options || {};
+          this.onclick = null; this.onshow = null; this.onerror = null; this.onclose = null;
+        }
+        UAINotification.permission = DENIED;
+        UAINotification.maxActions = 0;
+        UAINotification.requestPermission = function (cb) {
+          if (typeof cb === 'function') { try { cb(DENIED); } catch (e) {} }
+          return Promise.resolve(DENIED);
+        };
+        UAINotification.prototype.close = function () {};
+        UAINotification.prototype.addEventListener = function () {};
+        UAINotification.prototype.removeEventListener = function () {};
+        UAINotification.prototype.dispatchEvent = function () { return false; };
+        try {
+          Object.defineProperty(window, 'Notification', {
+            value: UAINotification, configurable: true, writable: true,
+          });
+        } catch (e) {
+          try { window.Notification = UAINotification; } catch (e2) {}
+        }
+      } catch (e) {}
+    })();
+    """
+
     static let noAutocorrectScript = """
     (() => {
       if (window.__uaiNoAutocorrect) return;
