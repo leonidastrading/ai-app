@@ -112,6 +112,7 @@ private struct ServicesSettings: View {
 private struct ProviderSettingsRow: View {
     let provider: Provider
     @ObservedObject var registry: ProviderRegistry
+    @EnvironmentObject private var webViews: WebViewStore
     @AppStorage private var enabled: Bool
     @AppStorage private var url: String
 
@@ -120,6 +121,15 @@ private struct ProviderSettingsRow: View {
         self.registry = registry
         _enabled = AppStorage(wrappedValue: true, SettingsKey.enabled(provider.id))
         _url = AppStorage(wrappedValue: "", SettingsKey.homeURL(provider.id))
+    }
+
+    /// Commit a URL edit: add a missing scheme (so it isn't silently ignored),
+    /// then load the new address in the AI right away if its tab is open.
+    private func applyURL() {
+        var u = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !u.isEmpty, !u.contains("://") { u = "https://" + u }
+        if u != url { url = u }
+        if webViews.existingWebView(for: provider.id) != nil { webViews.goHome(provider.id) }
     }
 
     var body: some View {
@@ -137,6 +147,7 @@ private struct ProviderSettingsRow: View {
             Text(provider.name).frame(width: 80, alignment: .leading)
             TextField("", text: $url, prompt: Text(provider.defaultHomeURL.absoluteString))
                 .textFieldStyle(.roundedBorder)
+                .onSubmit { applyURL() }
             Button {
                 let u = url.isEmpty ? provider.defaultHomeURL.absoluteString : url
                 NSPasteboard.general.clearContents()

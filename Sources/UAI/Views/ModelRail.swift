@@ -78,6 +78,8 @@ private struct RailProviderSlot: View {
     let provider: Provider
     let shortcut: Int
     @AppStorage private var enabled: Bool
+    @State private var showEdit = false
+    @State private var editURL = ""
 
     init(provider: Provider, shortcut: Int) {
         self.provider = provider
@@ -100,6 +102,10 @@ private struct RailProviderSlot: View {
                     webViews.goHome(provider.id)
                 }
                 Button("Reload") { webViews.reload(provider.id) }
+                Button("Edit Address…") {
+                    editURL = provider.homeURL.absoluteString
+                    showEdit = true
+                }
                 Divider()
                 Button("Set Icon…") { ProviderRegistry.shared.chooseCustomIcon(provider.id) }
                 if ProviderRegistry.shared.customIconURL(provider.id) != nil {
@@ -125,6 +131,19 @@ private struct RailProviderSlot: View {
                         enabled = false
                     }
                 }
+            }
+            .alert("Edit address — \(provider.name)", isPresented: $showEdit) {
+                TextField("https://…", text: $editURL)
+                Button("Save") {
+                    var u = editURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !u.isEmpty, !u.contains("://") { u = "https://" + u }
+                    UserDefaults.standard.set(u, forKey: SettingsKey.homeURL(provider.id))
+                    app.go(.provider(provider.id))
+                    webViews.goHome(provider.id)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Loads this address in \(provider.name) and remembers it across restarts.")
             }
         }
     }
