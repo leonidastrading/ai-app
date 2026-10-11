@@ -21,7 +21,11 @@ struct AddAISheet: View {
         var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text), url.host?.contains(".") == true else { return nil }
+        // Accept any real web address: a normal domain, but also localhost and
+        // bare IPs (e.g. a local dev server like http://localhost:7011). Just
+        // require an http(s) URL with a non-empty, space-free host.
+        guard let url = URL(string: text), url.scheme?.hasPrefix("http") == true,
+              let host = url.host, !host.isEmpty, !host.contains(" ") else { return nil }
         return url
     }
 
