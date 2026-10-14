@@ -93,6 +93,12 @@ function replyWatcher() {
     // were away, so it's worth a ping.
     if (present() || m.total <= seenTotal) { seenTotal = Math.max(seenTotal, m.total); return; }
     const preview = clean((m.lastEl && m.lastEl.innerText) || "").slice(0, 220);
+    // Agentic runs now happen in a normal claude.ai chat too (not only /code),
+    // showing a live status like "2m 8s running" / "8s running" / "esc to
+    // interrupt" whose elapsed timer lives outside the measured reply, so the
+    // page can look settled while it's still working. If the preview still
+    // carries that status, it isn't a finished reply — skip.
+    if (/\b\d+\s*m\s*\d+\s*s\s+running\b|\b\d+\s*s\s+running\b|esc to interrupt/i.test(preview)) return;
     if (preview && preview !== lastFired) {
       lastFired = preview;
       ipcRenderer.sendToHost("reply", { title: clean(document.title), preview });
