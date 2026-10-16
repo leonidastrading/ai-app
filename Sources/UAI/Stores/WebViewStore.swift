@@ -41,6 +41,8 @@ final class WebViewStore: NSObject, ObservableObject {
     private var observers: [NSKeyValueObservation] = []
     private var popups: [NSWindow] = []
     private var indexTimer: Timer?
+    private var replyTimer: Timer?
+    private var backgroundActivity: NSObjectProtocol?
     /// Media URLs already saved, so reloads don't duplicate them.
     private var capturedURLs: Set<String>
     /// Content hashes of saved media, so the same image saved under a new URL
@@ -67,6 +69,28 @@ final class WebViewStore: NSObject, ObservableObject {
         indexTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.indexAll() }
         }
+        // macOS throttles a web view's own JS timers to ~once a minute while the
+        // app is in the background (App Nap) — exactly when you've switched away
+        // and a reply notification matters most, so replies could ping minutes
+        // late. Drive the in-page reply detector from a native timer too, which
+        // keeps its cadence; beginActivity keeps App Nap from slowing it down.
+        backgroundActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .suddenTerminationDisabled],
+            reason: "Watch for AI replies to notify while in the background")
+        let timer = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            for wv in self.webViews.values {
+                wv.evaluateJavaScript("window.__uaiReplyTick && window.__uaiReplyTick()", completionHandler: nil)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        replyTimer = timer
+    }
+
+    deinit {
+        indexTimer?.invalidate()
+        replyTimer?.invalidate()
+        if let backgroundActivity { ProcessInfo.processInfo.endActivity(backgroundActivity) }
     }
 
     // MARK: - Web views
@@ -808,16 +832,33 @@ extension WebViewStore {
         '[data-testid="markdown"]', '.message-bubble', '.markdown', '.prose',
         '[class*="assistant" i]', '[class*="message" i]', '[class*="response" i]', '[class*="bubble" i]'
       ].join(',');
+      // Is this element part of YOUR message (not the AI's)? Only excluded when
+      // clearly marked user — anything ambiguous stays included so sites without
+      // role markers still work. Keeps us from treating your sent prompt as a
+      // "reply" (which fired a notification and showed your prompt as the text).
+      const isUser = (el) => {
+        for (let n = el, i = 0; n && i < 16; n = n.parentElement, i++) {
+          const r = (n.getAttribute && (n.getAttribute('data-message-author-role') || '')).toLowerCase();
+          if (r === 'user') return true;
+          if (r === 'assistant' || r === 'model') return false;
+          const c = (n.className && typeof n.className === 'string') ? n.className.toLowerCase() : '';
+          if (/user-query|from-user|human-turn|user-message|query-content|request-|user-bubble/.test(c)) return true;
+          if (/assistant|model-response|agent-|response-|font-claude/.test(c)) return false;
+        }
+        return false;
+      };
       const measure = () => {
         const els = document.querySelectorAll(replySelector);
         let total = 0;                       // textContent: cheap, no reflow
-        for (const e of els) total += (e.textContent || '').length;
-        // Preview source = the LAST matched element that actually has text, so
-        // trailing UI chrome (empty buttons/containers) doesn't blank the
-        // preview and suppress the event.
+        for (const e of els) { if (!isUser(e)) total += (e.textContent || '').length; }
+        // Preview source = the LAST AI (non-user) element that actually has text,
+        // so trailing UI chrome doesn't blank the preview and your own prompt is
+        // never used as the reply text.
         let lastEl = null;
         for (let i = els.length - 1; i >= 0; i--) {
-          if (((els[i].innerText || '').trim().length) > 20) { lastEl = els[i]; break; }
+          const e = els[i];
+          if (isUser(e)) continue;
+          if (((e.innerText || '').trim().length) > 20) { lastEl = e; break; }
         }
         if (!lastEl && els.length) lastEl = els[els.length - 1];
         return { total, count: els.length, lastEl };
@@ -877,7 +918,7 @@ extension WebViewStore {
       // block the reliable path.
       let stopBusy = false, stopGone = 0;
       let lastTotal = -1, lastCount = -1, sawGrowth = false, lastChange = 0;
-      setInterval(() => {
+      const tick = () => {
         const now = Date.now();
         const stop = [...document.querySelectorAll(stopSelector)].find(b => {
           const label = (b.getAttribute('aria-label') || b.title || '').toLowerCase();
@@ -920,7 +961,14 @@ extension WebViewStore {
         // ping you want when you glance away just before it finishes. This still
         // dedupes a late/throttled re-fire of something you actually sat and read.
         if (present() && !sawGrowth && now - lastChange > 2500) seenTotal = Math.max(seenTotal, m.total);
-      }, 700);
+      };
+      // The in-page timer keeps detection snappy in the foreground. But macOS
+      // throttles a web view's timers to ~once a minute while the app is in the
+      // background — exactly when you've switched away and a notification matters
+      // most — so replies could ping minutes late. The native app also drives
+      // this tick from a real timer (which isn't throttled) via __uaiReplyTick.
+      setInterval(tick, 700);
+      window.__uaiReplyTick = tick;
     })();
     """
 }

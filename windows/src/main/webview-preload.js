@@ -54,15 +54,32 @@ function replyWatcher() {
     '[data-testid="markdown"]', ".message-bubble", ".markdown", ".prose",
     '[class*="assistant" i]', '[class*="message" i]', '[class*="response" i]', '[class*="bubble" i]',
   ].join(",");
+  // Is this element part of YOUR message (not the AI's)? Only excluded when
+  // clearly marked user — ambiguous stays included so sites without role markers
+  // still work. Keeps us from treating your sent prompt as a "reply".
+  const isUser = (el) => {
+    for (let n = el, i = 0; n && i < 16; n = n.parentElement, i++) {
+      const r = (n.getAttribute && (n.getAttribute("data-message-author-role") || "")).toLowerCase();
+      if (r === "user") return true;
+      if (r === "assistant" || r === "model") return false;
+      const c = (n.className && typeof n.className === "string") ? n.className.toLowerCase() : "";
+      if (/user-query|from-user|human-turn|user-message|query-content|request-|user-bubble/.test(c)) return true;
+      if (/assistant|model-response|agent-|response-|font-claude/.test(c)) return false;
+    }
+    return false;
+  };
   const measure = () => {
     const els = document.querySelectorAll(replySel);
     let total = 0;                         // textContent: cheap, no reflow
-    for (const e of els) total += (e.textContent || "").length;
-    // Preview source = last matched element that actually has text, so trailing
-    // UI chrome doesn't blank the preview and suppress the event.
+    for (const e of els) { if (!isUser(e)) total += (e.textContent || "").length; }
+    // Preview source = last AI (non-user) element that actually has text, so
+    // trailing UI chrome doesn't blank the preview and your own prompt is never
+    // used as the reply text.
     let lastEl = null;
     for (let i = els.length - 1; i >= 0; i--) {
-      if (((els[i].innerText || "").trim().length) > 20) { lastEl = els[i]; break; }
+      const e = els[i];
+      if (isUser(e)) continue;
+      if (((e.innerText || "").trim().length) > 20) { lastEl = e; break; }
     }
     if (!lastEl && els.length) lastEl = els[els.length - 1];
     return { total, count: els.length, lastEl };
