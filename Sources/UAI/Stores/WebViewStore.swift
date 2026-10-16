@@ -854,11 +854,14 @@ extension WebViewStore {
         if (present() || m.total <= seenTotal) { seenTotal = Math.max(seenTotal, m.total); return; }
         const preview = clean((m.lastEl && m.lastEl.innerText) || '').slice(0, 220);
         // Agentic runs now happen in a normal claude.ai chat too (not only
-        // /code), showing a live status like "2m 8s running" / "8s running" /
-        // "esc to interrupt" whose elapsed timer lives outside the measured
-        // reply, so the page can look settled while it's still working. If the
-        // preview still carries that status, it isn't a finished reply — skip.
-        if (/\\b\\d+\\s*m\\s*\\d+\\s*s\\s+running\\b|\\b\\d+\\s*s\\s+running\\b|esc to interrupt/i.test(preview)) return;
+        // /code), showing a live progress status whose elapsed timer lives
+        // outside the measured reply — so the page can look settled while it's
+        // still working. Two shapes: (a) "...2m 8s running" / "esc to interrupt"
+        // anywhere; (b) a collapsed status pill: a gerund-led phrase ending in a
+        // bare timer ("Planning ... 7s"), no sentence punctuation. Either way
+        // it's not a finished reply, so don't notify.
+        if (/esc to interrupt|\\b\\d+\\s*(?:m\\s*\\d+\\s*s|s)\\s+running\\b/i.test(preview)) return;
+        if (/^[^A-Za-z]*[A-Z][a-z]+ing\\b[^.!?]*\\b\\d+\\s*(?:m\\s*\\d+\\s*s|s)\\s*[>›»]*$/.test(preview)) return;
         if (preview && preview !== lastFired) {
           lastFired = preview;
           try { window.webkit.messageHandlers.uai.postMessage({ type: 'replyDone', title: clean(document.title), preview }); }
