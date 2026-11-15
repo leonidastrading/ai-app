@@ -40,6 +40,10 @@ final class WebViewStore: NSObject, ObservableObject {
     private var webViews: [ProviderID: WKWebView] = [:]
     private var observers: [NSKeyValueObservation] = []
     private var popups: [NSWindow] = []
+    // A popup web view (target=_blank / window.open) → the AI that opened it, so
+    // when the popup later navigates to a plain external site we can send it to
+    // the default browser while keeping that AI's own sign-in/callback in-app.
+    private var popupOpener: [ObjectIdentifier: ProviderID] = [:]
     private var indexTimer: Timer?
     private var replyTimer: Timer?
     private var backgroundActivity: NSObjectProtocol?
@@ -1107,6 +1111,26 @@ extension WebViewStore: WKNavigationDelegate, WKDownloadDelegate {
             decisionHandler(.cancel)
             return
         }
+        // A popup the AI opened (target=_blank / window.open) that lands on a
+        // plain external site — not its own pages, a sign-in, or an identity
+        // provider — goes to your default browser, and the empty popup window
+        // closes. This catches links opened via a script-deferred URL, which
+        // don't arrive as a .linkActivated main-frame navigation below.
+        if let url = navigationAction.request.url,
+           url.scheme?.hasPrefix("http") == true,
+           navigationAction.targetFrame?.isMainFrame ?? true,
+           let opener = popupOpener[ObjectIdentifier(webView)],
+           !isInternalHost(url.host, for: opener),
+           !Self.isSignInURL(url), !isIdentityHost(url) {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            if let window = popups.first(where: { $0.contentView === webView }) {
+                popupOpener[ObjectIdentifier(webView)] = nil
+                window.close()
+                popups.removeAll { $0 === window }
+            }
+            return
+        }
         // A link you click in a reply that points OUTSIDE the AI's own site
         // opens in your default browser (a new tab there) — never inside UAI.
         // The AI's own pages and any sign-in flow stay in-app.
@@ -1286,6 +1310,7 @@ extension WebViewStore: WKUIDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         popups.append(window)
+        popupOpener[ObjectIdentifier(popup)] = provider(of: webView)
         return popup
     }
 
@@ -1302,6 +1327,7 @@ extension WebViewStore: WKUIDelegate {
     }
 
     func webViewDidClose(_ webView: WKWebView) {
+        popupOpener[ObjectIdentifier(webView)] = nil
         if let window = popups.first(where: { $0.contentView === webView }) {
             window.close()
             popups.removeAll { $0 === window }
