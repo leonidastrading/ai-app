@@ -125,6 +125,11 @@ final class WebViewStore: NSObject, ObservableObject {
         // so the prompts stop — UAI delivers its own native reply notifications.
         config.userContentController.addUserScript(WKUserScript(
             source: Self.notificationStubScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        // Catch clicks on links to OTHER sites and open them in your default
+        // browser — even when the AI's own JavaScript would open them in-app.
+        // Runs at document start so it sees the click before the site's handler.
+        config.userContentController.addUserScript(WKUserScript(
+            source: Self.linkRouterScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.add(ScriptMessageProxy(target: self), name: "uai")
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -702,6 +707,34 @@ extension WebViewStore {
 
     /// Sets autocorrect="off" (WebKit honors it) on every editable field so
     /// the OS stops popping word suggestions, while leaving spellcheck on.
+    // Open links to OTHER sites in the default browser, even when the AI's own
+    // JavaScript would navigate in-app (single-page apps intercept link clicks,
+    // so they never reach the native "open externally" path). A capture-phase
+    // listener registered at document start sees the click first and hands the
+    // URL to the app. Same-site links, sign-in/OAuth paths, and modifier-clicks
+    // are left alone so logins and in-app navigation still work.
+    static let linkRouterScript = """
+    (() => {
+      if (window.__uaiLinkRouter) return;
+      window.__uaiLinkRouter = true;
+      const SIGNIN = /\\/(login|log-in|signin|sign-in|signup|sign-up|oauth|oauth2|authorize|auth|sso)(\\/|$|\\?|#)/i;
+      document.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // let cmd-click etc. behave normally
+        const a = e.target && e.target.closest && e.target.closest('a[href]');
+        if (!a) return;
+        let u;
+        try { u = new URL(a.href, location.href); } catch (x) { return; }
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+        if (u.host === location.host) return;                           // same site → let the app handle it
+        if (SIGNIN.test(u.pathname)) return;                            // sign-in / OAuth stays in-app
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        try { window.webkit.messageHandlers.uai.postMessage({ type: 'openExternal', url: u.href }); } catch (x) {}
+      }, true);
+    })();
+    """
+
     // Settle the page's Notification permission so sites stop nagging to "enable
     // notifications." These web views don't display page web-notifications anyway
     // (UAI sends its own native reply notifications), so a fixed "denied" both
@@ -979,8 +1012,17 @@ extension WebViewStore {
 
 extension WebViewStore: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String,
-              let id = provider(of: message.webView) else { return }
+        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        // A link to another site, clicked in any AI → your default browser. Sent
+        // from the injected click router, which catches links the site's own JS
+        // would otherwise open in-app. No provider needed (works from popups too).
+        if type == "openExternal" {
+            if let s = body["url"] as? String, let url = URL(string: s), url.scheme?.hasPrefix("http") == true {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        guard let id = provider(of: message.webView) else { return }
         switch type {
         case "replyDone":
             onReply?(id, body["title"] as? String ?? "", body["preview"] as? String ?? "")
