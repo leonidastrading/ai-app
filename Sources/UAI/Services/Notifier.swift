@@ -4,20 +4,16 @@ import UserNotifications
 /// Posts "Claude replied" style notifications and routes clicks back to the
 /// right AI.
 ///
-/// Delivery is layered so it works even for a side-loaded, ad-hoc-signed app:
-/// `UNUserNotificationCenter` is used when the system actually authorized it,
-/// otherwise we fall back to the older `NSUserNotification` (which needs no
-/// authorization and keeps working for non-notarized apps). On top of either,
-/// we always chime and bounce the Dock, so a reply is noticeable even when the
-/// OS suppresses banners for an unsigned app.
-final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotificationCenterDelegate {
+/// Delivery always goes through `UNUserNotificationCenter` (the only API modern
+/// macOS actually displays). We never gate it on a cached "authorized" flag,
+/// which could get stuck and silently route every notification into the void.
+/// On top of the banner we also chime and bounce the Dock, so a reply is
+/// noticeable even if the OS suppresses the banner.
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
 
     /// Called on the main thread when a notification is clicked.
     var onOpen: ((ProviderID) -> Void)?
-
-    /// Whether modern UserNotifications banners are actually authorized.
-    private var modernReady = false
 
     var isEnabled: Bool {
         UserDefaults.standard.object(forKey: SettingsKey.notifications) as? Bool ?? true
@@ -28,17 +24,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
     }
 
     func start() {
-        NSUserNotificationCenter.default.delegate = self
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
-            self?.modernReady = granted
-        }
-        // Re-check actual status (authorization can already exist from a prior run).
-        center.getNotificationSettings { [weak self] settings in
-            let ok = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
-            if ok { self?.modernReady = true }
-        }
+        // Prompt once if undecided. Whatever the answer, delivery always goes
+        // through UNUserNotificationCenter below: the result here is only used
+        // to prompt, never to gate delivery (a cached "not ready" used to get
+        // stuck and silently route every notification to a dead API).
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     func replied(_ provider: Provider, title: String, preview: String) {
@@ -54,11 +46,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
             if !NSApp.isActive { NSApp.requestUserAttention(.criticalRequest) }
         }
 
-        if modernReady {
-            deliverModern(provider: provider, subtitle: subtitle, body: body)
-        } else {
-            deliverLegacy(provider: provider, subtitle: subtitle, body: body)
-        }
+        deliverModern(provider: provider, subtitle: subtitle, body: body)
     }
 
     /// A generic notification not tied to any AI (e.g. "update available").
@@ -68,25 +56,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
             if self.soundEnabled { NSSound(named: "Glass")?.play() }
             if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
-        if modernReady {
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = soundEnabled ? .default : nil
-            let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(req) { [weak self] error in
-                if error != nil {
-                    self?.modernReady = false
-                    DispatchQueue.main.async {
-                        let n = NSUserNotification(); n.title = title; n.informativeText = body
-                        NSUserNotificationCenter.default.deliver(n)
-                    }
-                }
-            }
-        } else {
-            let n = NSUserNotification(); n.title = title; n.informativeText = body
-            NSUserNotificationCenter.default.deliver(n)
-        }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = soundEnabled ? .default : nil
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { _ in }
     }
 
     private func deliverModern(provider: Provider, subtitle: String?, body: String) {
@@ -98,23 +73,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
         content.threadIdentifier = provider.id.rawValue
         content.userInfo = ["provider": provider.id.rawValue]
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { [weak self] error in
-            // If the modern API rejects it (common for ad-hoc apps), fall back.
-            if error != nil {
-                self?.modernReady = false
-                DispatchQueue.main.async { self?.deliverLegacy(provider: provider, subtitle: subtitle, body: body) }
-            }
-        }
-    }
-
-    private func deliverLegacy(provider: Provider, subtitle: String?, body: String) {
-        let n = NSUserNotification()
-        n.title = "\(provider.name) replied"
-        if let subtitle { n.subtitle = subtitle }
-        n.informativeText = body
-        if soundEnabled { n.soundName = NSUserNotificationDefaultSoundName }
-        n.userInfo = ["provider": provider.id.rawValue]
-        NSUserNotificationCenter.default.deliver(n)
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 
     /// Opens System Settings at UAI's notification settings.
@@ -145,13 +104,4 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NSUserNotifica
         completionHandler()
     }
 
-    // MARK: NSUserNotificationCenterDelegate (legacy fallback)
-
-    func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
-        true   // show even when UAI is frontmost
-    }
-
-    func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
-        if let raw = notification.userInfo?["provider"] as? String { open(providerRaw: raw) }
-    }
 }
