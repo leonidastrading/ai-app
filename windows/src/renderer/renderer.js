@@ -312,10 +312,69 @@ function railItem(p) {
     <span class="label">${escapeHtml(p.name)}</span>
     <span class="badge" style="display:none"></span>`;
   el.addEventListener("click", () => select(p.id));
-  el.addEventListener("contextmenu", (e) => { e.preventDefault(); openEditUrl(p.id); });
+  el.addEventListener("contextmenu", (e) => { e.preventDefault(); showRailMenu(e, p); });
   wireDrag(el);
   return el;
 }
+
+// Remove a custom AI (or hide a built-in one) from the rail, close its web view,
+// and fall back to Universal if it was open. Shared by the rail menu and
+// Settings so both behave identically.
+async function removeProvider(id) {
+  await removeCustomAI(id);
+  if (webviews[id]) { webviews[id].remove(); delete webviews[id]; }
+  const wasCurrent = current === id;
+  await loadProviders(await window.api.getState());
+  buildRail(); buildSettingsProviders();
+  if (wasCurrent) select("__universal__");
+}
+async function hideProvider(id) {
+  hidden.add(id);
+  await setState({ hiddenProviders: [...hidden] });
+  if (webviews[id]) { webviews[id].remove(); delete webviews[id]; }
+  const wasCurrent = current === id;
+  await loadProviders(await window.api.getState());
+  buildRail(); buildSettingsProviders();
+  if (wasCurrent) select("__universal__");
+}
+
+// A small right-click menu on each rail icon: the easy way to remove/hide an AI
+// (built-ins can be shown again from Settings), plus edit-address and reload.
+let railMenuEl = null;
+function closeRailMenu() {
+  if (!railMenuEl) return;
+  railMenuEl.remove(); railMenuEl = null;
+  document.removeEventListener("mousedown", onRailMenuOutside, true);
+}
+function onRailMenuOutside(e) { if (railMenuEl && !railMenuEl.contains(e.target)) closeRailMenu(); }
+function showRailMenu(e, p) {
+  closeRailMenu();
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu";
+  const items = [
+    { label: "Reload", fn: () => { const wv = webviews[p.id]; if (wv) { try { wv.reload(); } catch (x) {} } } },
+    { label: "Edit address…", fn: () => openEditUrl(p.id) },
+    p.custom
+      ? { label: `Remove ${p.name}`, danger: true, fn: () => { if (confirm(`Remove ${p.name}?`)) removeProvider(p.id); } }
+      : { label: `Hide ${p.name}`, danger: true, fn: () => hideProvider(p.id) },
+  ];
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "ctx-item" + (it.danger ? " danger" : "");
+    b.textContent = it.label;
+    b.onclick = () => { closeRailMenu(); it.fn(); };
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  let x = e.clientX, y = e.clientY;
+  if (x + menu.offsetWidth > window.innerWidth) x = window.innerWidth - menu.offsetWidth - 8;
+  if (y + menu.offsetHeight > window.innerHeight) y = window.innerHeight - menu.offsetHeight - 8;
+  menu.style.left = Math.max(8, x) + "px";
+  menu.style.top = Math.max(8, y) + "px";
+  railMenuEl = menu;
+  setTimeout(() => document.addEventListener("mousedown", onRailMenuOutside, true), 0);
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRailMenu(); });
 
 // Edit an AI's web address: persists the override, then loads it right away in
 // that AI (built-in or custom). Right-click a rail icon, or use Settings.
